@@ -51,6 +51,10 @@ _DEFAULT_TIMEOUT_S = 5.0
 _BANNER_MAX_LEN = 255  # RFC 4253 §4.2
 _PACKET_LENGTH_FIELD = 4
 _PADDING_LENGTH_FIELD = 1
+# RFC 4253 §6.1: packet_length MUST be at most 35000 bytes. A hostile
+# server that announces 4 GB would otherwise drain RAM before the
+# socket timeout fires. We use the RFC ceiling as a hard cap.
+_MAX_SSH_PACKET = 35000
 _COOKIE_LEN = 16
 _KEXINIT_MSG_ID = 20
 _NAME_LIST_FIELDS = (
@@ -335,10 +339,28 @@ def assess_ssh_endpoint(
 
 
 async def _read_banner(reader: asyncio.StreamReader, timeout_s: float) -> str:
-    """Read a single CRLF-terminated banner, stripping the line ending."""
-    raw = await asyncio.wait_for(reader.readline(), timeout=timeout_s)
+    """Read a single CRLF-terminated banner, stripping the line ending.
+
+    Caps the read at ``_BANNER_MAX_LEN`` bytes BEFORE consuming them so
+    a hostile server that never sends a newline can't drain RAM up to
+    the timeout. Uses ``readuntil(b"\\n", limit=...)`` and returns
+    whatever was read on overflow.
+    """
+    try:
+        raw = await asyncio.wait_for(
+            reader.readuntil(b"\n"),
+            timeout=timeout_s,
+        )
+    except asyncio.LimitOverrunError:
+        # Server sent a banner that ignores the RFC max length. Read at
+        # most _BANNER_MAX_LEN bytes and treat that as the banner.
+        raw = await asyncio.wait_for(
+            reader.readexactly(_BANNER_MAX_LEN),
+            timeout=timeout_s,
+        )
     if len(raw) > _BANNER_MAX_LEN:
-        # RFC limits banner length; truncate defensively.
+        # Defensive: truncate even when readuntil succeeded but the
+        # banner exceeded the RFC limit.
         raw = raw[:_BANNER_MAX_LEN]
     return raw.decode("ascii", errors="replace").rstrip("\r\n")
 
@@ -363,6 +385,12 @@ async def _read_kexinit_packet(reader: asyncio.StreamReader, timeout_s: float) -
     padding_length = head[4]
     if packet_length < padding_length + 1:
         raise ValueError(f"invalid packet framing: pkt_len={packet_length} pad={padding_length}")
+    if packet_length > _MAX_SSH_PACKET:
+        # RFC 4253 §6.1 caps packet_length at 35000 bytes. A larger value
+        # signals either a buggy or hostile peer trying to exhaust RAM.
+        raise ValueError(
+            f"oversized SSH packet: pkt_len={packet_length} > {_MAX_SSH_PACKET}"
+        )
     payload_len = packet_length - padding_length - 1
     rest = await asyncio.wait_for(
         reader.readexactly(payload_len + padding_length), timeout=timeout_s

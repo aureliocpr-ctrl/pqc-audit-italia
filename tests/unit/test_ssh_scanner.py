@@ -238,3 +238,65 @@ def test_ssh_scanner_handshake_failure_records_error() -> None:
     assert result.scanner_name == "ssh"
     assert result.assets == []
     assert result.errors  # populated
+
+
+def test_read_kexinit_rejects_oversized_packet_length() -> None:
+    """RFC 4253 §6.1 caps packet_length at 35000. A hostile peer that
+    announces 1 GB must be refused BEFORE we allocate the buffer.
+    """
+    import asyncio
+    import struct
+
+    from pqc_audit.scanners.ssh_scanner import _read_kexinit_packet
+
+    # Build a forged 5-byte header: packet_length=10**9, padding_length=0.
+    forged_head = struct.pack(">I", 10**9) + b"\x00"
+
+    class FakeReader:
+        def __init__(self, data: bytes) -> None:
+            self._data = data
+            self._pos = 0
+
+        async def readexactly(self, n: int) -> bytes:
+            chunk = self._data[self._pos : self._pos + n]
+            self._pos += n
+            if len(chunk) < n:
+                raise asyncio.IncompleteReadError(chunk, n)
+            return chunk
+
+    reader = FakeReader(forged_head)
+    try:
+        asyncio.run(_read_kexinit_packet(reader, timeout_s=1.0))  # type: ignore[arg-type]
+    except ValueError as exc:
+        assert "oversized" in str(exc).lower() or "35000" in str(exc)
+        return
+    raise AssertionError("oversized packet_length must raise ValueError")
+
+
+def test_read_banner_rejects_unbounded_stream() -> None:
+    """A peer that never sends a newline must NOT drain RAM up to the
+    socket timeout. Banner read is capped at _BANNER_MAX_LEN bytes.
+    """
+    import asyncio
+
+    from pqc_audit.scanners.ssh_scanner import _BANNER_MAX_LEN, _read_banner
+
+    class NoNewlineReader:
+        """Returns a constant stream of bytes without ever yielding b'\\n'."""
+
+        def __init__(self) -> None:
+            self.bytes_consumed = 0
+
+        async def readuntil(self, separator: bytes) -> bytes:  # noqa: ARG002
+            # Simulate buffer overrun the way real asyncio does it.
+            raise asyncio.LimitOverrunError("no separator in stream", 0)
+
+        async def readexactly(self, n: int) -> bytes:
+            self.bytes_consumed += n
+            return b"X" * n
+
+    reader = NoNewlineReader()
+    banner = asyncio.run(_read_banner(reader, timeout_s=1.0))  # type: ignore[arg-type]
+    # Banner must be capped at the RFC limit.
+    assert len(banner) <= _BANNER_MAX_LEN
+    assert reader.bytes_consumed <= _BANNER_MAX_LEN
