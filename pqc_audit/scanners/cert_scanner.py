@@ -48,6 +48,13 @@ _SCANNER_NAME = "certs"
 # extension that fail to parse are recorded as scan errors.
 _CERT_SUFFIXES: frozenset[str] = frozenset({".pem", ".crt", ".cer", ".der"})
 
+# Hard cap on how many bytes we are willing to load into RAM for a
+# single certificate file. Real X.509 certificates are usually a few
+# kB; even a concat-PEM bundle (full chain + intermediates) rarely
+# exceeds a megabyte. 8 MB protects against accidental DoS via a
+# 100 GB file masquerading as a ``.pem``.
+_MAX_CERT_BYTES = 8 * 1024 * 1024
+
 
 def parse_certificate_file(path: Path) -> x509.Certificate:
     """Read a certificate from disk.
@@ -59,6 +66,17 @@ def parse_certificate_file(path: Path) -> x509.Certificate:
     """
     if not path.exists():
         raise FileNotFoundError(f"certificate file not found: {path}")
+    # Reject files larger than the hard cap BEFORE loading them into
+    # RAM. A hostile or buggy file with a .pem extension that is
+    # actually a 4 GB blob would otherwise OOM the auditor.
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise ValueError(f"unable to stat {path}: {exc}") from exc
+    if size > _MAX_CERT_BYTES:
+        raise ValueError(
+            f"certificate file too large: {size} bytes > {_MAX_CERT_BYTES} cap"
+        )
     raw = path.read_bytes()
     try:
         if b"-----BEGIN CERTIFICATE-----" in raw:
@@ -113,10 +131,24 @@ def cert_to_asset(cert: x509.Certificate, source_path: Path) -> CryptoAsset:
 
 
 def _iter_candidate_files(root: Path) -> list[Path]:
-    """Walk ``root`` recursively, returning every file with a known cert suffix."""
+    """Walk ``root`` recursively, returning every file with a known cert suffix.
+
+    Symlinks are NOT followed (they could form recursive loops or escape
+    the audit scope, e.g. a symlink to ``/`` from inside a customer
+    directory). Only regular files inside the tree are returned.
+    """
     if root.is_file():
         return [root]
-    return sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in _CERT_SUFFIXES)
+    out: list[Path] = []
+    for p in root.rglob("*"):
+        # Skip symlinks (both files and dirs) — never follow.
+        if p.is_symlink():
+            continue
+        if not p.is_file():
+            continue
+        if p.suffix.lower() in _CERT_SUFFIXES:
+            out.append(p)
+    return sorted(out)
 
 
 def _scan_one_file(path: Path) -> tuple[CryptoAsset | None, list[Vulnerability], str | None]:
