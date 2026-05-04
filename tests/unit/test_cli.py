@@ -37,15 +37,16 @@ def test_scan_help() -> None:
         assert keyword in result.stdout
 
 
-def test_scan_certs_stub_exits_2() -> None:
-    """certs stub explicitly returns exit code 2 (not yet implemented)."""
+def test_scan_certs_without_path_exits_nonzero() -> None:
+    """`scan certs` without --path is a typer usage error (exit code 2)."""
     result = runner.invoke(app, ["scan", "certs"])
-    assert result.exit_code == 2
+    assert result.exit_code != 0
 
 
-def test_scan_ssh_stub_exits_2() -> None:
+def test_scan_ssh_without_host_exits_nonzero() -> None:
+    """`scan ssh` without --host is a typer usage error (exit code 2)."""
     result = runner.invoke(app, ["scan", "ssh"])
-    assert result.exit_code == 2
+    assert result.exit_code != 0
 
 
 def test_scan_tls_against_unreachable_host_returns_valid_json() -> None:

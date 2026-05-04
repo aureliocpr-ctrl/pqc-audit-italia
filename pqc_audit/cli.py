@@ -15,6 +15,8 @@ import typer
 
 from pqc_audit import Auditor, ScanTarget, __version__
 from pqc_audit.reporters.json_reporter import render as render_json
+from pqc_audit.scanners.cert_scanner import CertificateScanner
+from pqc_audit.scanners.ssh_scanner import SSHScanner
 
 app = typer.Typer(
     name="pqc-audit",
@@ -61,17 +63,32 @@ def scan_tls_cmd(
 
 
 @scan_app.command("certs")
-def scan_certs_cmd() -> None:
-    """Scan a directory of certificate files. Phase 1.e feature — coming soon."""
-    typer.echo("[stub] scan certs — implemented in Phase 1.e")
-    raise typer.Exit(code=2)
+def scan_certs_cmd(
+    path: str = typer.Option(
+        ..., "--path", help="Certificate file or directory to scan recursively."
+    ),
+    policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Scan one or more X.509 certificate files (PEM/DER) and emit a JSON report."""
+    auditor = Auditor(policy=policy, scanners=[CertificateScanner()])
+    target = ScanTarget(type="certs", path=path)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
 
 
 @scan_app.command("ssh")
-def scan_ssh_cmd() -> None:
-    """Scan an SSH endpoint. Phase 1.e feature — coming soon."""
-    typer.echo("[stub] scan ssh — implemented in Phase 1.e")
-    raise typer.Exit(code=2)
+def scan_ssh_cmd(
+    host: str = typer.Option(..., "--host", help="Hostname or IP of the SSH server."),
+    port: int = typer.Option(22, "--port", help="TCP port (default: 22)."),
+    policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Scan a single SSH endpoint (KEXINIT enumeration) and emit a JSON report."""
+    auditor = Auditor(policy=policy, scanners=[SSHScanner()])
+    target = ScanTarget(type="ssh", host=host, port=port)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
 
 
 @app.command("report")
