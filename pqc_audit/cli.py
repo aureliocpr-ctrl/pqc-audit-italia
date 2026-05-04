@@ -46,6 +46,11 @@ def scan_tls_cmd(
     host: str = typer.Option(..., "--host", help="Hostname or IP to connect to."),
     port: int = typer.Option(443, "--port", help="TCP port (default: 443)."),
     policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    data_sensitivity_years: int = typer.Option(
+        10,
+        "--data-sensitivity-years",
+        help="Assumed lifetime of confidential data, drives HNDL scoring (default: 10).",
+    ),
     pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
     enforce: bool = typer.Option(
         False,
@@ -54,7 +59,7 @@ def scan_tls_cmd(
     ),
 ) -> None:
     """Scan a single TLS endpoint and print a JSON audit report."""
-    auditor = Auditor(policy=policy)
+    auditor = Auditor(policy=policy, data_sensitivity_years=data_sensitivity_years)
     target = ScanTarget(type="tls", host=host, port=port)
     report = asyncio.run(auditor.scan([target]))
     rendered = render_json(report, pretty=pretty)
@@ -76,10 +81,19 @@ def scan_certs_cmd(
         ..., "--path", help="Certificate file or directory to scan recursively."
     ),
     policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    data_sensitivity_years: int = typer.Option(
+        10,
+        "--data-sensitivity-years",
+        help="Assumed lifetime of confidential data, drives HNDL scoring (default: 10).",
+    ),
     pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
 ) -> None:
     """Scan one or more X.509 certificate files (PEM/DER) and emit a JSON report."""
-    auditor = Auditor(policy=policy, scanners=[CertificateScanner()])
+    auditor = Auditor(
+        policy=policy,
+        data_sensitivity_years=data_sensitivity_years,
+        scanners=[CertificateScanner()],
+    )
     target = ScanTarget(type="certs", path=path)
     report = asyncio.run(auditor.scan([target]))
     typer.echo(render_json(report, pretty=pretty))
@@ -90,10 +104,19 @@ def scan_ssh_cmd(
     host: str = typer.Option(..., "--host", help="Hostname or IP of the SSH server."),
     port: int = typer.Option(22, "--port", help="TCP port (default: 22)."),
     policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    data_sensitivity_years: int = typer.Option(
+        10,
+        "--data-sensitivity-years",
+        help="Assumed lifetime of confidential data, drives HNDL scoring (default: 10).",
+    ),
     pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
 ) -> None:
     """Scan a single SSH endpoint (KEXINIT enumeration) and emit a JSON report."""
-    auditor = Auditor(policy=policy, scanners=[SSHScanner()])
+    auditor = Auditor(
+        policy=policy,
+        data_sensitivity_years=data_sensitivity_years,
+        scanners=[SSHScanner()],
+    )
     target = ScanTarget(type="ssh", host=host, port=port)
     report = asyncio.run(auditor.scan([target]))
     typer.echo(render_json(report, pretty=pretty))
