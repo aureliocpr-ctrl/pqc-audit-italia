@@ -23,16 +23,18 @@ def test_scan_target_filesystem_basic() -> None:
 
 
 def test_scan_target_rejects_invalid_port() -> None:
-    from pqc_audit.scanners.base import ScanTarget
     from pydantic import ValidationError
+
+    from pqc_audit.scanners.base import ScanTarget
 
     with pytest.raises(ValidationError):
         ScanTarget(type="tls", host="example.it", port=99999)
 
 
 def test_scan_target_rejects_unknown_type() -> None:
-    from pqc_audit.scanners.base import ScanTarget
     from pydantic import ValidationError
+
+    from pqc_audit.scanners.base import ScanTarget
 
     with pytest.raises(ValidationError):
         ScanTarget(type="laser-beam-scan", host="x")

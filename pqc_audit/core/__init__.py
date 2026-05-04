@@ -12,13 +12,6 @@ from pqc_audit.core.algorithms import (
     is_deprecated,
     recommend_pqc_replacement,
 )
-from pqc_audit.core.risk import (
-    DEFAULT_QDAY_YEAR,
-    aggregate_risk,
-    calculate_agility_score,
-    calculate_hndl_risk,
-    calculate_qday_risk,
-)
 from pqc_audit.core.models import (
     Algorithm,
     AuditReport,
@@ -29,6 +22,13 @@ from pqc_audit.core.models import (
     ScanCategory,
     ScanResult,
     Vulnerability,
+)
+from pqc_audit.core.risk import (
+    DEFAULT_QDAY_YEAR,
+    aggregate_risk,
+    calculate_agility_score,
+    calculate_hndl_risk,
+    calculate_qday_risk,
 )
 
 __all__ = [

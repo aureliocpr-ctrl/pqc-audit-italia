@@ -22,12 +22,12 @@ import asyncio
 import hashlib
 import socket
 import ssl
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed25519, ed448, rsa
+from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
 
 from pqc_audit.core.algorithms import AlgorithmClass, classify_algorithm, is_deprecated
 from pqc_audit.core.models import (
@@ -143,9 +143,7 @@ def assess_certificate(
                 severity=RiskLevel.HIGH,
                 cwe="CWE-327",
                 affected_asset_ids=affected,
-                references=(
-                    "https://csrc.nist.gov/projects/post-quantum-cryptography",
-                ),
+                references=("https://csrc.nist.gov/projects/post-quantum-cryptography",),
             )
         )
     elif cls is AlgorithmClass.QUANTUM_WEAKENED:
@@ -228,24 +226,30 @@ def assess_certificate(
     return vulns
 
 
-async def _handshake(host: str, port: int, *, timeout: float = 8.0) -> dict[str, Any]:
+async def _handshake(host: str, port: int, *, timeout_s: float = 8.0) -> dict[str, Any]:
     """Perform a TLS handshake and capture the peer certificate (DER).
 
     Pure stdlib ``ssl`` to avoid heavy dependencies. Runs in a worker
     thread so the rest of the async pipeline isn't blocked.
     """
+
     def _blocking() -> dict[str, Any]:
         ctx = ssl.create_default_context()
+        # We are inspecting the certificate, not validating it: peers
+        # under audit may legitimately present expired / self-signed
+        # certificates that we want to surface as findings.
         ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        with socket.create_connection((host, port), timeout=timeout) as raw:
-            with ctx.wrap_socket(raw, server_hostname=host) as tls:
-                der = tls.getpeercert(binary_form=True)
-                return {
-                    "der": der,
-                    "version": tls.version(),
-                    "cipher": tls.cipher(),  # tuple (name, ssl_version, secret_bits)
-                }
+        ctx.verify_mode = ssl.CERT_NONE  # noqa: S501 — intentional, see above
+        with (
+            socket.create_connection((host, port), timeout=timeout_s) as raw,
+            ctx.wrap_socket(raw, server_hostname=host) as tls,
+        ):
+            der = tls.getpeercert(binary_form=True)
+            return {
+                "der": der,
+                "version": tls.version(),
+                "cipher": tls.cipher(),  # tuple (name, ssl_version, secret_bits)
+            }
 
     return await asyncio.to_thread(_blocking)
 
@@ -260,7 +264,7 @@ class TLSScanner:
         return target.type == "tls" and bool(target.host) and target.port is not None
 
     async def scan(self, target: ScanTarget) -> ScanResult:
-        started = datetime.now(timezone.utc)
+        started = datetime.now(UTC)
         assets: list[CryptoAsset] = []
         vulns: list[Vulnerability] = []
         errors: list[str] = []
@@ -294,13 +298,11 @@ class TLSScanner:
                         },
                     )
                 )
-                vulns.extend(
-                    assess_certificate(alg, km, hash_name=hash_name, asset_id=asset_id)
-                )
+                vulns.extend(assess_certificate(alg, km, hash_name=hash_name, asset_id=asset_id))
         except Exception as e:  # noqa: BLE001 — surfaced to caller as a soft error
             errors.append(f"{type(e).__name__}: {e}")
 
-        finished = datetime.now(timezone.utc)
+        finished = datetime.now(UTC)
         return ScanResult(
             scanner_name=self.name,
             target=target_repr,

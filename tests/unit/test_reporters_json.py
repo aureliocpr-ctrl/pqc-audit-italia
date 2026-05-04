@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 
 def _build_audit_report():
@@ -25,7 +23,7 @@ def _build_audit_report():
         category=ScanCategory.NETWORK,
         algorithm=Algorithm(name="RSA", key_size_bits=2048),
         location="example.it:443",
-        discovered_at=datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc),
+        discovered_at=datetime(2026, 5, 4, 12, 0, tzinfo=UTC),
     )
     vuln = Vulnerability(
         title="Quantum-vulnerable algorithm in use",
@@ -45,15 +43,15 @@ def _build_audit_report():
         target="example.it:443",
         assets=[asset],
         vulnerabilities=[vuln],
-        started_at=datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc),
-        finished_at=datetime(2026, 5, 4, 12, 0, 5, tzinfo=timezone.utc),
+        started_at=datetime(2026, 5, 4, 12, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 5, 4, 12, 0, 5, tzinfo=UTC),
     )
     return AuditReport(
         report_id="audit-2026-001",
         scan_results=[sr],
         policy_name="agid_2026",
         recommendations=[rec],
-        generated_at=datetime(2026, 5, 4, 12, 0, 10, tzinfo=timezone.utc),
+        generated_at=datetime(2026, 5, 4, 12, 0, 10, tzinfo=UTC),
     )
 
 
@@ -76,7 +74,14 @@ def test_json_reporter_top_level_keys() -> None:
     from pqc_audit.reporters.json_reporter import render
 
     parsed = json.loads(render(_build_audit_report()))
-    for k in ("report_id", "policy_name", "scan_results", "recommendations", "generated_at", "summary"):
+    for k in (
+        "report_id",
+        "policy_name",
+        "scan_results",
+        "recommendations",
+        "generated_at",
+        "summary",
+    ):
         assert k in parsed
 
 

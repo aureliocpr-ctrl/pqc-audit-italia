@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pqc_audit.core.models import AuditReport
 from pqc_audit.reporters.json_reporter import render
@@ -31,7 +31,7 @@ async def main() -> None:
         report_id=f"single-host-{host}-{port}",
         scan_results=[result],
         policy_name="agid_2026",
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
     )
     print(render(report))
 

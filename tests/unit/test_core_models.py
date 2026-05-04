@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -61,8 +61,9 @@ def test_key_material_fingerprint_required() -> None:
 
 
 def test_key_material_rejects_short_fingerprint() -> None:
-    from pqc_audit.core.models import KeyMaterial
     from pydantic import ValidationError
+
+    from pqc_audit.core.models import KeyMaterial
 
     with pytest.raises(ValidationError):
         KeyMaterial(
@@ -84,7 +85,7 @@ def test_crypto_asset_basic() -> None:
         category=ScanCategory.NETWORK,
         algorithm=Algorithm(name="RSA", key_size_bits=2048),
         location="example.it:443",
-        discovered_at=datetime.now(timezone.utc),
+        discovered_at=datetime.now(UTC),
     )
     assert asset.asset_id == "tls://example.it:443"
     assert asset.category is ScanCategory.NETWORK
@@ -102,8 +103,9 @@ def test_vulnerability_default_severity_info() -> None:
 
 
 def test_migration_recommendation_priority_range() -> None:
-    from pqc_audit.core.models import MigrationRecommendation
     from pydantic import ValidationError
+
+    from pqc_audit.core.models import MigrationRecommendation
 
     rec = MigrationRecommendation(
         from_algorithm="RSA-2048",
@@ -135,15 +137,15 @@ def test_scan_result_aggregates_assets() -> None:
         category=ScanCategory.NETWORK,
         algorithm=Algorithm(name="RSA", key_size_bits=2048),
         location="x",
-        discovered_at=datetime.now(timezone.utc),
+        discovered_at=datetime.now(UTC),
     )
     sr = ScanResult(
         scanner_name="tls",
         target="example.it:443",
         assets=[a],
         vulnerabilities=[],
-        started_at=datetime.now(timezone.utc),
-        finished_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
     )
     assert sr.scanner_name == "tls"
     assert len(sr.assets) == 1
@@ -163,21 +165,21 @@ def test_audit_report_aggregate() -> None:
         category=ScanCategory.NETWORK,
         algorithm=Algorithm(name="RSA", key_size_bits=2048),
         location="x",
-        discovered_at=datetime.now(timezone.utc),
+        discovered_at=datetime.now(UTC),
     )
     sr = ScanResult(
         scanner_name="tls",
         target="example.it:443",
         assets=[a],
         vulnerabilities=[],
-        started_at=datetime.now(timezone.utc),
-        finished_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
     )
     ar = AuditReport(
         report_id="audit-001",
         scan_results=[sr],
         policy_name="agid_2026",
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
     )
     assert ar.report_id == "audit-001"
     assert ar.total_assets == 1

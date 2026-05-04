@@ -9,9 +9,7 @@ The TLS scanner has two layers:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
-import pytest
+from datetime import UTC, datetime, timedelta
 
 
 def _build_self_signed_rsa_cert(key_size: int = 2048):
@@ -22,20 +20,17 @@ def _build_self_signed_rsa_cert(key_size: int = 2048):
     from cryptography.x509.oid import NameOID
 
     key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
-    subject = issuer = x509.Name(
-        [x509.NameAttribute(NameOID.COMMON_NAME, "test.example.it")]
-    )
-    cert = (
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test.example.it")])
+    return (
         x509.CertificateBuilder()
         .subject_name(subject)
         .issuer_name(issuer)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now(timezone.utc) - timedelta(days=1))
-        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=30))
+        .not_valid_before(datetime.now(UTC) - timedelta(days=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=30))
         .sign(key, hashes.SHA256())
     )
-    return cert
 
 
 def _build_self_signed_ecdsa_cert():
@@ -45,20 +40,17 @@ def _build_self_signed_ecdsa_cert():
     from cryptography.x509.oid import NameOID
 
     key = ec.generate_private_key(ec.SECP256R1())
-    subject = issuer = x509.Name(
-        [x509.NameAttribute(NameOID.COMMON_NAME, "test.example.it")]
-    )
-    cert = (
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test.example.it")])
+    return (
         x509.CertificateBuilder()
         .subject_name(subject)
         .issuer_name(issuer)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now(timezone.utc) - timedelta(days=1))
-        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=30))
+        .not_valid_before(datetime.now(UTC) - timedelta(days=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=30))
         .sign(key, hashes.SHA256())
     )
-    return cert
 
 
 def test_extract_algorithm_from_rsa_cert() -> None:
@@ -122,11 +114,11 @@ def test_assess_rsa_2048_quantum_vulnerable() -> None:
 
 
 def test_assess_sha1_signed_cert_flags_weak_hash() -> None:
+    from pqc_audit.core.models import Algorithm
     from pqc_audit.scanners.tls_scanner import (
         assess_certificate,
         certificate_to_key_material,
     )
-    from pqc_audit.core.models import Algorithm
 
     cert = _build_self_signed_rsa_cert(key_size=2048)
     km = certificate_to_key_material(cert)
@@ -140,11 +132,11 @@ def test_assess_sha1_signed_cert_flags_weak_hash() -> None:
 
 
 def test_assess_short_rsa_flags_undersize() -> None:
+    from pqc_audit.core.models import Algorithm
     from pqc_audit.scanners.tls_scanner import (
         assess_certificate,
         certificate_to_key_material,
     )
-    from pqc_audit.core.models import Algorithm
 
     cert = _build_self_signed_rsa_cert(key_size=2048)
     km = certificate_to_key_material(cert)

@@ -64,4 +64,6 @@ def render(report: AuditReport, *, pretty: bool = True) -> str:
 
     indent = 2 if pretty else None
     separators = None if pretty else (",", ":")
-    return json.dumps(payload, indent=indent, separators=separators, sort_keys=False, ensure_ascii=False)
+    return json.dumps(
+        payload, indent=indent, separators=separators, sort_keys=False, ensure_ascii=False
+    )

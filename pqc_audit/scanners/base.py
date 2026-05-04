@@ -16,7 +16,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from pqc_audit.core.models import ScanCategory, ScanResult
 
-
 TargetType = Literal[
     "tls",
     "ssh",
@@ -62,7 +61,9 @@ class ScanTarget(BaseModel):
     type: TargetType
     host: str | None = Field(default=None, description="Hostname or IP for network targets.")
     port: int | None = Field(default=None, ge=1, le=65535)
-    path: str | None = Field(default=None, description="Filesystem path for FS / code / config / binary targets.")
+    path: str | None = Field(
+        default=None, description="Filesystem path for FS / code / config / binary targets."
+    )
     extra: dict[str, str] = Field(default_factory=dict)
 
 

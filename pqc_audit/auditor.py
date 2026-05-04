@@ -18,7 +18,7 @@ whole audit run.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pqc_audit.core.models import AuditReport, ScanResult
 from pqc_audit.scanners.base import BaseScanner, ScanTarget
@@ -58,5 +58,5 @@ class Auditor:
             report_id=f"audit-{uuid.uuid4().hex[:12]}",
             scan_results=results,
             policy_name=self.policy,
-            generated_at=datetime.now(timezone.utc),
+            generated_at=datetime.now(UTC),
         )

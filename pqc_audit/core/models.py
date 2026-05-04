@@ -9,7 +9,7 @@ risk scoring in ``risk.py``, scanner orchestration in
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum, IntEnum
+from enum import IntEnum, StrEnum
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -38,7 +38,7 @@ class RiskLevel(IntEnum):
         return cls.__members__.get(upper, cls.INFO)
 
 
-class ScanCategory(str, Enum):
+class ScanCategory(StrEnum):
     """High-level category of a scan target."""
 
     NETWORK = "NETWORK"
@@ -79,11 +79,12 @@ class Algorithm(BaseModel):
             AES(key_size_bits=128, mode='GCM') -> 'AES-128-GCM'
         """
         parts = [self.name]
-        if self.key_size_bits and not any(
-            ch.isdigit() for ch in self.name.split("-")[-1]
+        if (
+            self.key_size_bits
+            and not any(ch.isdigit() for ch in self.name.split("-")[-1])
+            or self.key_size_bits
+            and "-" not in self.name
         ):
-            parts.append(str(self.key_size_bits))
-        elif self.key_size_bits and "-" not in self.name:
             parts.append(str(self.key_size_bits))
         if self.mode:
             parts.append(self.mode)
@@ -202,6 +203,5 @@ class AuditReport(BaseModel):
         max_sev = RiskLevel.INFO
         for sr in self.scan_results:
             for v in sr.vulnerabilities:
-                if v.severity > max_sev:
-                    max_sev = v.severity
+                max_sev = max(max_sev, v.severity)
         return max_sev

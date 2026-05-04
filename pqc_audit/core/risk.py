@@ -11,7 +11,7 @@ to defend each number in front of an auditor.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pqc_audit.core.algorithms import AlgorithmClass, classify_algorithm
@@ -70,7 +70,7 @@ def calculate_hndl_risk(
     Quantum-resistant algorithms get a near-zero score regardless of
     sensitivity — they were not vulnerable in the first place.
     """
-    today = today or datetime.now(timezone.utc)
+    today = today or datetime.now(UTC)
     cls = classify_algorithm(asset.algorithm.name)
     if cls is AlgorithmClass.QUANTUM_RESISTANT:
         return _clamp(_SCORE_RESISTANT_BASE)

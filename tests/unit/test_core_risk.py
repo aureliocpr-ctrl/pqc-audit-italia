@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -15,13 +15,14 @@ def _make_asset(algorithm_name: str, key_size: int | None = None):
         category=ScanCategory.NETWORK,
         algorithm=Algorithm(name=algorithm_name, key_size_bits=key_size),
         location="example.it",
-        discovered_at=datetime.now(timezone.utc),
+        discovered_at=datetime.now(UTC),
     )
 
 
 # ---------------------------------------------------------------------------
 # HNDL (Harvest Now, Decrypt Later)
 # ---------------------------------------------------------------------------
+
 
 def test_hndl_high_for_quantum_vulnerable_long_lifetime() -> None:
     from pqc_audit.core.risk import calculate_hndl_risk
@@ -60,6 +61,7 @@ def test_hndl_clamped_0_100() -> None:
 # Q-Day
 # ---------------------------------------------------------------------------
 
+
 def test_qday_high_for_quantum_vulnerable() -> None:
     from pqc_audit.core.risk import calculate_qday_risk
 
@@ -88,6 +90,7 @@ def test_qday_medium_for_quantum_weakened() -> None:
 # Agility
 # ---------------------------------------------------------------------------
 
+
 def test_agility_default_medium() -> None:
     from pqc_audit.core.risk import calculate_agility_score
 
@@ -105,7 +108,7 @@ def test_agility_lower_when_hardcoded_in_metadata() -> None:
         category=ScanCategory.CODE,
         algorithm=Algorithm(name="RSA", key_size_bits=2048),
         location="src/auth.py:42",
-        discovered_at=datetime.now(timezone.utc),
+        discovered_at=datetime.now(UTC),
         metadata={"hardcoded": True, "cert_pinned": True},
     )
     free = CryptoAsset(
@@ -113,7 +116,7 @@ def test_agility_lower_when_hardcoded_in_metadata() -> None:
         category=ScanCategory.CONFIG,
         algorithm=Algorithm(name="RSA", key_size_bits=2048),
         location="/etc/nginx/nginx.conf",
-        discovered_at=datetime.now(timezone.utc),
+        discovered_at=datetime.now(UTC),
         metadata={"hardcoded": False, "cert_pinned": False},
     )
     assert calculate_agility_score(pinned) < calculate_agility_score(free)
@@ -122,6 +125,7 @@ def test_agility_lower_when_hardcoded_in_metadata() -> None:
 # ---------------------------------------------------------------------------
 # Aggregate
 # ---------------------------------------------------------------------------
+
 
 def test_aggregate_risk_picks_max_hndl() -> None:
     from pqc_audit.core.risk import aggregate_risk

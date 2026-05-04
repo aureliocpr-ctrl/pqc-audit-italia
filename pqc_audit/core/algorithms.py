@@ -17,11 +17,11 @@ normalizes by stripping a trailing key-size suffix when not needed.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class AlgorithmClass(str, Enum):
+class AlgorithmClass(StrEnum):
     """Classification verdict for a given algorithm name."""
 
     QUANTUM_VULNERABLE = "QUANTUM_VULNERABLE"
@@ -181,15 +181,19 @@ HYBRID_SCHEMES: dict[str, dict[str, Any]] = {
 # Classification helpers
 # ---------------------------------------------------------------------------
 
+
 def _normalize(name: str) -> str:
     """Uppercase, strip whitespace; preserve internal hyphens."""
     return name.strip().upper()
 
 
+_MIN_PARTS_FOR_KEYSIZE_STRIP = 2
+
+
 def _strip_keysize(name: str) -> str:
     """Drop a trailing '-<digits>' if the algorithm root carries no number."""
     parts = name.split("-")
-    if len(parts) >= 2 and parts[-1].isdigit():
+    if len(parts) >= _MIN_PARTS_FOR_KEYSIZE_STRIP and parts[-1].isdigit():
         # Keep the suffix when it disambiguates the algorithm name itself
         # (e.g. ML-KEM-768, AES-128). Strip only when the root matches a
         # plain entry (RSA-2048 -> RSA).
