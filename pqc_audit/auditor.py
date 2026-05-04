@@ -18,6 +18,7 @@ whole audit run.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 
@@ -193,21 +194,48 @@ class Auditor:
         policy: str = "default",
         data_sensitivity_years: int = DEFAULT_DATA_SENSITIVITY_YEARS,
         scanners: list[BaseScanner] | None = None,
+        max_concurrency: int = 16,
     ) -> None:
         self.policy = policy
         self.data_sensitivity_years = data_sensitivity_years
         self.scanners: list[BaseScanner] = (
             list(scanners) if scanners is not None else [TLSScanner()]
         )
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be >= 1")
+        self.max_concurrency = max_concurrency
+
+    async def _scan_single(
+        self,
+        target: ScanTarget,
+        sem: asyncio.Semaphore,
+    ) -> list[ScanResult]:
+        """Scan one target across every applicable scanner. Bounded by ``sem``."""
+        out: list[ScanResult] = []
+        for scanner in self.scanners:
+            if await scanner.is_applicable(target):
+                async with sem:
+                    out.append(await scanner.scan(target))
+        return out
 
     async def scan(self, targets: list[ScanTarget]) -> AuditReport:
         """Run every applicable scanner against every target and
-        return an enriched :class:`AuditReport`."""
+        return an enriched :class:`AuditReport`.
+
+        Targets are scanned **concurrently**, bounded by
+        ``max_concurrency`` (default 16) so we don't hammer the
+        operator's network or the targets themselves. Per-target
+        errors are isolated in ``ScanResult.errors`` and never abort
+        the run.
+        """
+        sem = asyncio.Semaphore(self.max_concurrency)
+        per_target = await asyncio.gather(
+            *(self._scan_single(t, sem) for t in targets),
+            return_exceptions=False,
+        )
         results: list[ScanResult] = []
-        for target in targets:
-            for scanner in self.scanners:
-                if await scanner.is_applicable(target):
-                    results.append(await scanner.scan(target))
+        for batch in per_target:
+            results.extend(batch)
 
         raw_report = AuditReport(
             report_id=f"audit-{uuid.uuid4().hex[:12]}",
