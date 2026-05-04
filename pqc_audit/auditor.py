@@ -22,8 +22,8 @@ import uuid
 from datetime import UTC, datetime
 
 from pqc_audit.core.algorithms import (
-    AlgorithmClass,
     HYBRID_SCHEMES,
+    AlgorithmClass,
     classify_algorithm,
     recommend_pqc_replacement,
 )
@@ -60,17 +60,16 @@ def _hybrid_for(algorithm_name: str) -> str | None:
     return next(iter(HYBRID_SCHEMES), None)
 
 
+# Score thresholds for the 1-5 migration priority bucket.
+_PRIORITY_THRESHOLDS = ((90, 5), (75, 4), (50, 3), (25, 2))
+
+
 def _priority_for(hndl_score: int, qday_score: int) -> int:
     """Map (HNDL, Q-Day) scores to 1-5 migration priority."""
     high_water = max(hndl_score, qday_score)
-    if high_water >= 90:
-        return 5
-    if high_water >= 75:
-        return 4
-    if high_water >= 50:
-        return 3
-    if high_water >= 25:
-        return 2
+    for threshold, level in _PRIORITY_THRESHOLDS:
+        if high_water >= threshold:
+            return level
     return 1
 
 
