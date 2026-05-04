@@ -67,7 +67,7 @@ def _markdown_to_html(md: str) -> str:
     headers, GFM tables, bold, italic, inline code and bullet lists.
     """
     try:
-        import markdown as _md  # type: ignore[import-not-found,unused-ignore]  # noqa: PLC0415
+        import markdown as _md  # type: ignore[import-not-found,import-untyped,unused-ignore]  # noqa: PLC0415
     except ImportError:
         return _fallback_markdown_to_html(md)
     return str(_md.markdown(md, extensions=["tables"]))
