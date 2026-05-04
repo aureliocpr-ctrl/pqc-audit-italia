@@ -52,10 +52,7 @@ def load_policy(name: str) -> dict[str, Any]:
     cursor: str = name
     while cursor:
         if cursor in seen:
-            raise RuntimeError(
-                "policy inheritance loop detected: "
-                + " -> ".join([*chain, cursor])
-            )
+            raise RuntimeError("policy inheritance loop detected: " + " -> ".join([*chain, cursor]))
         seen.add(cursor)
         chain.append(cursor)
         raw = _load_raw(cursor)
