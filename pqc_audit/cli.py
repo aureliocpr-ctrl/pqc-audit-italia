@@ -9,6 +9,7 @@ spinning up a CLI runner.
 from __future__ import annotations
 
 import asyncio
+import json
 
 import typer
 
@@ -36,12 +37,27 @@ def scan_tls_cmd(
     port: int = typer.Option(443, "--port", help="TCP port (default: 443)."),
     policy: str = typer.Option("default", "--policy", help="Audit policy name."),
     pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+    enforce: bool = typer.Option(
+        False,
+        "--enforce",
+        help="Evaluate the report against --policy and embed policy_evaluation in JSON.",
+    ),
 ) -> None:
     """Scan a single TLS endpoint and print a JSON audit report."""
     auditor = Auditor(policy=policy)
     target = ScanTarget(type="tls", host=host, port=port)
     report = asyncio.run(auditor.scan([target]))
-    typer.echo(render_json(report, pretty=pretty))
+    rendered = render_json(report, pretty=pretty)
+    if enforce:
+        evaluation = auditor.evaluate_against_policy(report)
+        payload = json.loads(rendered)
+        payload["policy_evaluation"] = json.loads(evaluation.model_dump_json())
+        indent = 2 if pretty else None
+        separators = None if pretty else (",", ":")
+        rendered = json.dumps(
+            payload, indent=indent, separators=separators, sort_keys=False, ensure_ascii=False
+        )
+    typer.echo(rendered)
 
 
 @scan_app.command("certs")
