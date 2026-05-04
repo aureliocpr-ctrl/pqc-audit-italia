@@ -1,0 +1,55 @@
+# AgID 2026 policy
+#
+# Italian Public Administration baseline. Inherits from nist_baseline
+# and tightens where AgID Linee Guida and the Misure minime di
+# sicurezza ICT impose stricter requirements (notably TLS minimum
+# version, document preservation, SPID/CIE artifact signing).
+
+name: agid_2026
+description: >
+  Italian Public Administration baseline (AgID Linee Guida +
+  Misure minime di sicurezza ICT). Conservative defaults for PA
+  endpoints that operate SPID, CIE, ANPR, NoiPA, etc.
+
+inherits: nist_baseline
+
+data_sensitivity_years: 30   # PA archives + document preservation
+
+minimum_tls_version: TLSv1.2
+
+forbidden_algorithms:
+  - MD5
+  - SHA-1
+  - 3DES
+  - RC4
+  - RSA-1024
+  - RSA-2048      # PA must plan migration past 2048 — too short for 30y
+  - DSA-1024
+  - DSA-2048
+
+discouraged_algorithms:
+  - ECDSA-P-256   # acceptable for now, but SHA-384 minimum for signing
+  - SHA-256       # SHA-384 minimum where signing PA documents
+
+required_replacements:
+  RSA: ML-DSA-65
+  DSA: ML-DSA-65
+  ECDSA: ML-DSA-65
+  EdDSA: ML-DSA-65
+  ECDH: ML-KEM-768
+  DH: ML-KEM-768
+
+thresholds:
+  hndl_max_score: 50         # tight: long-lived PA data
+  qday_max_score: 60
+  min_agility_score: 50
+
+extra_controls:
+  spid_signing_must_be_pqc_capable_by: 2027-01-01
+  document_preservation_min_hash: SHA-384
+  forbid_self_signed_on_public_pa_endpoints: true
+
+references:
+  - https://www.agid.gov.it/it/sicurezza
+  - https://www.agid.gov.it/sites/agid/files/2024-04/linee_guida_funzioni_crittografiche.pdf
+  - https://www.agid.gov.it/it/sicurezza/misure-minime-sicurezza-ict

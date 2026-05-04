@@ -1,0 +1,56 @@
+# Banking Italy policy
+#
+# Aimed at banks and Payment Service Providers under Banca d'Italia
+# supervision and DORA scope. Inherits from nist_baseline and adds
+# DORA-specific tightening + payment-card-industry constraints.
+
+name: banking_italy
+description: >
+  Italian banking sector policy. Targets entities under Banca d'Italia
+  supervision and DORA scope. Reflects payment-card constraints and
+  customer-data confidentiality lifecycle (account histories retained
+  for 10+ years).
+
+inherits: nist_baseline
+
+data_sensitivity_years: 15
+
+minimum_tls_version: TLSv1.2
+
+forbidden_algorithms:
+  - MD5
+  - SHA-1
+  - 3DES
+  - RC4
+  - RSA-1024
+  - DSA-1024
+  - DSA-2048
+
+discouraged_algorithms:
+  - RSA-2048           # acceptable for short-term, but plan ahead
+  - ECDSA-P-192
+  - SHA-256            # SHA-384 minimum for transaction integrity
+
+required_replacements:
+  RSA: ML-DSA-65
+  DSA: ML-DSA-65
+  ECDSA: ML-DSA-65
+  EdDSA: ML-DSA-65
+  ECDH: ML-KEM-768
+  DH: ML-KEM-768
+
+thresholds:
+  hndl_max_score: 60
+  qday_max_score: 70
+  min_agility_score: 40
+
+extra_controls:
+  payment_card_min_aes: AES-256
+  swift_messaging_min_signature: ML-DSA-65
+  internet_banking_must_be_tls_1_3_by: 2026-12-31
+  hsm_required_for_signing_keys: true
+
+references:
+  - https://eur-lex.europa.eu/eli/reg/2022/2554/oj    # DORA
+  - https://www.bancaditalia.it/                       # Banca d'Italia circolari
+  - https://www.eba.europa.eu/                         # EBA guidelines

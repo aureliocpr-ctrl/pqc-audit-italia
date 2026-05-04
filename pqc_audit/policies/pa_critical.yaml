@@ -1,0 +1,63 @@
+# PA critical policy
+#
+# Strictest profile in the bundle. Targets PA entities classified as
+# "essenziali" or "importanti" under D.Lgs. 138/2024 in critical
+# sectors: healthcare, public safety, energy, finance, defense
+# auxiliaries. Long-confidentiality data (40+ years for some health
+# and judicial records) drives aggressive HNDL exposure thresholds.
+
+name: pa_critical
+description: >
+  Strict profile for Italian PA entities in critical sectors
+  (healthcare, public safety, energy, defense auxiliaries) under
+  NIS2 D.Lgs. 138/2024 "essenziali / importanti" classification.
+
+inherits: agid_2026
+
+data_sensitivity_years: 40
+
+minimum_tls_version: TLSv1.3
+
+forbidden_algorithms:
+  - MD5
+  - SHA-1
+  - 3DES
+  - RC4
+  - RSA-1024
+  - RSA-2048
+  - RSA-3072        # 40-year HNDL window forbids classical asymmetric
+  - DSA-1024
+  - DSA-2048
+  - ECDSA-P-192
+
+discouraged_algorithms:
+  - ECDSA-P-256     # acceptable only with PQC hybrid signing
+  - SHA-256
+
+required_replacements:
+  RSA: ML-DSA-87       # NIST category 5 — strongest variant
+  DSA: ML-DSA-87
+  ECDSA: ML-DSA-87
+  EdDSA: ML-DSA-87
+  ECDH: ML-KEM-1024    # NIST category 5
+  DH: ML-KEM-1024
+
+thresholds:
+  hndl_max_score: 25         # nearly any HNDL exposure is unacceptable
+  qday_max_score: 40
+  min_agility_score: 60
+
+extra_controls:
+  hybrid_pqc_required_by: 2027-01-01
+  hsm_fips_140_3_level_3_or_higher: true
+  forbid_self_signed_on_public_pa_endpoints: true
+  signing_min_hash: SHA-384
+  document_preservation_min_hash: SHA-512
+  air_gapped_keys_required_for: ["root_ca", "code_signing", "boot_signing"]
+
+references:
+  - https://www.gazzettaufficiale.it/eli/id/2024/10/01/24G00155/sg
+  - https://www.acn.gov.it/strategia
+  - https://csrc.nist.gov/pubs/fips/203/final
+  - https://csrc.nist.gov/pubs/fips/204/final
+  - https://csrc.nist.gov/pubs/fips/205/final

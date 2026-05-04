@@ -99,6 +99,9 @@ pqc-audit = "pqc_audit.cli:app"
 [tool.hatch.build.targets.wheel]
 packages = ["pqc_audit"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"pqc_audit/policies" = "pqc_audit/policies"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

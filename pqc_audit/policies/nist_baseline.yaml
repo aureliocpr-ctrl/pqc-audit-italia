@@ -1,0 +1,61 @@
+# NIST baseline policy
+#
+# Aligned with NIST FIPS 203/204/205, SP 800-227, and the 2024-2025
+# transition guidance. This policy is the technology baseline; sector
+# policies (banking, PA, AgID) inherit from it and tighten where
+# Italian-specific rules apply.
+#
+# Schema (loaded by pqc_audit.policies.engine in Phase 5):
+#   name: stable identifier
+#   description: human-readable summary
+#   data_sensitivity_years: assumed lifetime of confidential data
+#   minimum_tls_version: e.g. "TLSv1.2"
+#   forbidden_algorithms: list of canonical names that are HARD-FAIL
+#   discouraged_algorithms: list that triggers a warning
+#   required_replacements: { from -> to } guidance
+#   thresholds:
+#     hndl_max_score: trigger CRITICAL when above
+#     qday_max_score: trigger CRITICAL when above
+#     min_agility_score: warn when below
+
+name: nist_baseline
+description: >
+  NIST PQC baseline derived from FIPS 203/204/205 and SP 800-227.
+  Suitable as the default policy for projects without sector-specific
+  Italian requirements.
+
+data_sensitivity_years: 10
+
+minimum_tls_version: TLSv1.2
+
+forbidden_algorithms:
+  - MD5
+  - SHA-1
+  - 3DES
+  - RC4
+  - RSA-1024
+  - DSA-1024
+
+discouraged_algorithms:
+  - RSA-2048      # use only with a hybrid PQC plan
+  - ECDSA-P-192   # use P-256 or higher
+  - ECDH-secp192r1
+
+required_replacements:
+  RSA: ML-DSA-65          # mixed-purpose default
+  DSA: ML-DSA-65
+  ECDSA: ML-DSA-65
+  EdDSA: ML-DSA-65
+  ECDH: ML-KEM-768
+  DH: ML-KEM-768
+
+thresholds:
+  hndl_max_score: 75
+  qday_max_score: 75
+  min_agility_score: 30
+
+references:
+  - https://csrc.nist.gov/pubs/fips/203/final
+  - https://csrc.nist.gov/pubs/fips/204/final
+  - https://csrc.nist.gov/pubs/fips/205/final
+  - https://csrc.nist.gov/pubs/sp/800/227
