@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project artifacts
+/output/
+/scans/
+*.scan.json
+*.cbom.cdx.json
+*.audit.pdf
+
+# Secrets — never commit
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+!tests/fixtures/**/*.pem
+!tests/fixtures/**/*.crt
+.secret
+.secrets/
+
+# Docs build
+site/
+docs/_build/

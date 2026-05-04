@@ -1,0 +1,175 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pqc-audit-italia"
+version = "0.1.0"
+description = "Crypto-discovery and crypto-agility audit toolkit for the Italian market (PA, SMB, financial sector). NIS2/DORA/AgID-aware."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Aurelio Capriello", email = "aureliocpr@gmail.com" },
+]
+keywords = [
+    "pqc",
+    "post-quantum",
+    "cryptography",
+    "audit",
+    "nis2",
+    "dora",
+    "agid",
+    "fips-203",
+    "fips-204",
+    "fips-205",
+    "ml-kem",
+    "ml-dsa",
+    "slh-dsa",
+    "cbom",
+    "cyclonedx",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Security :: Cryptography",
+    "Topic :: System :: Networking :: Monitoring",
+    "Natural Language :: English",
+    "Natural Language :: Italian",
+]
+
+dependencies = [
+    "pydantic>=2.5",
+    "cryptography>=42.0",
+    "httpx>=0.27",
+    "structlog>=24.1",
+    "typer>=0.12",
+    "pyyaml>=6.0",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+pdf = [
+    "weasyprint>=62.0",
+    "jinja2>=3.1",
+]
+binary = [
+    "lief>=0.14",
+    "pefile>=2024.8",
+    "pyelftools>=0.31",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "bandit>=1.7",
+    "pip-audit>=2.7",
+    "respx>=0.21",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
+]
+
+[project.urls]
+Homepage = "https://github.com/aureliocpr/pqc-audit-italia"
+Documentation = "https://aureliocpr.github.io/pqc-audit-italia/"
+Repository = "https://github.com/aureliocpr/pqc-audit-italia"
+Issues = "https://github.com/aureliocpr/pqc-audit-italia/issues"
+Changelog = "https://github.com/aureliocpr/pqc-audit-italia/blob/main/CHANGELOG.md"
+
+[project.scripts]
+pqc-audit = "pqc_audit.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pqc_audit"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # bugbear
+    "UP",   # pyupgrade
+    "S",    # bandit
+    "ASYNC",
+    "RET",
+    "SIM",
+    "PL",
+]
+ignore = [
+    "PLR0913",  # too many arguments
+    "S101",     # assert in tests OK
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S105", "S106", "PLR2004"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+
+[[tool.mypy.overrides]]
+module = ["lief.*", "pefile.*", "weasyprint.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=pqc_audit",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (slow, may hit network)",
+    "slow: marks tests as slow",
+]
+
+[tool.coverage.run]
+source = ["pqc_audit"]
+omit = ["tests/*", "examples/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", "examples"]
