@@ -150,7 +150,7 @@ warn_unused_ignores = true
 warn_no_return = true
 
 [[tool.mypy.overrides]]
-module = ["lief.*", "pefile.*", "weasyprint.*"]
+module = ["lief.*", "pefile.*", "weasyprint.*", "markdown.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

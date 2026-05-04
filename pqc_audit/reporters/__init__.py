@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
-from pqc_audit.reporters import json_reporter
+from pqc_audit.reporters import (
+    cbom_reporter,
+    json_reporter,
+    markdown_reporter,
+    pdf_reporter,
+    sarif_reporter,
+)
 
-__all__ = ["json_reporter"]
+__all__ = [
+    "cbom_reporter",
+    "json_reporter",
+    "markdown_reporter",
+    "pdf_reporter",
+    "sarif_reporter",
+]
