@@ -40,6 +40,8 @@ from pqc_audit.core.risk import (
     calculate_hndl_risk,
     calculate_qday_risk,
 )
+from pqc_audit.policies import load_policy
+from pqc_audit.policy_engine import PolicyEvaluation, evaluate_report
 from pqc_audit.scanners.base import BaseScanner, ScanTarget
 from pqc_audit.scanners.tls_scanner import TLSScanner
 
@@ -244,3 +246,21 @@ class Auditor:
             generated_at=datetime.now(UTC),
         )
         return enrich_report(raw_report, data_sensitivity_years=self.data_sensitivity_years)
+
+    def evaluate_against_policy(
+        self,
+        report: AuditReport,
+        *,
+        policy_name: str | None = None,
+    ) -> PolicyEvaluation:
+        """Evaluate ``report`` against a bundled policy.
+
+        ``policy_name`` defaults to ``self.policy``. The reserved value
+        ``"default"`` is mapped to ``nist_baseline`` so callers using
+        the bare ``Auditor()`` still get meaningful enforcement.
+        """
+        name = policy_name or self.policy
+        if name == "default":
+            name = "nist_baseline"
+        policy = load_policy(name)
+        return evaluate_report(report, policy)
