@@ -21,6 +21,14 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
+from pqc_audit.auditor import Auditor
+from pqc_audit.core.models import AuditReport, ScanResult
+from pqc_audit.scanners.base import ScanTarget
+
 __all__ = [
+    "Auditor",
+    "AuditReport",
+    "ScanResult",
+    "ScanTarget",
     "__version__",
 ]

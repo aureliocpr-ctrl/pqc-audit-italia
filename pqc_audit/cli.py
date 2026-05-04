@@ -8,15 +8,20 @@ spinning up a CLI runner.
 
 from __future__ import annotations
 
+import asyncio
+
 import typer
 
-from pqc_audit import __version__
+from pqc_audit import Auditor, ScanTarget, __version__
+from pqc_audit.reporters.json_reporter import render as render_json
 
 app = typer.Typer(
     name="pqc-audit",
     help="Crypto-discovery and crypto-agility audit toolkit (Italian market).",
     no_args_is_help=True,
 )
+scan_app = typer.Typer(name="scan", help="Run a scanner against one or more targets.")
+app.add_typer(scan_app, name="scan")
 
 
 @app.command("version")
@@ -25,12 +30,31 @@ def version_cmd() -> None:
     typer.echo(__version__)
 
 
-@app.command("scan")
-def scan_cmd(
-    target_type: str = typer.Argument(..., help="One of: tls, certs, ssh, vpn, fs, binary, code, config, token"),
+@scan_app.command("tls")
+def scan_tls_cmd(
+    host: str = typer.Option(..., "--host", help="Hostname or IP to connect to."),
+    port: int = typer.Option(443, "--port", help="TCP port (default: 443)."),
+    policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
 ) -> None:
-    """Scan a target. Phase 1 stub — concrete scanners land in 0.2.0."""
-    typer.echo(f"[stub] scan {target_type} — not yet implemented")
+    """Scan a single TLS endpoint and print a JSON audit report."""
+    auditor = Auditor(policy=policy)
+    target = ScanTarget(type="tls", host=host, port=port)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
+
+
+@scan_app.command("certs")
+def scan_certs_cmd() -> None:
+    """Scan a directory of certificate files. Phase 1.e feature — coming soon."""
+    typer.echo("[stub] scan certs — implemented in Phase 1.e")
+    raise typer.Exit(code=2)
+
+
+@scan_app.command("ssh")
+def scan_ssh_cmd() -> None:
+    """Scan an SSH endpoint. Phase 1.e feature — coming soon."""
+    typer.echo("[stub] scan ssh — implemented in Phase 1.e")
     raise typer.Exit(code=2)
 
 
