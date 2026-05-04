@@ -46,20 +46,29 @@ def load_policy(name: str) -> dict[str, Any]:
 
     ``inherits`` chains are resolved depth-first; child keys override
     parent keys. A loop in the inheritance graph raises ``RuntimeError``.
+
+    The implementation reads each YAML file *once* via a local cache —
+    previously the chain walk and the merge phase each re-opened the
+    same file, which was both wasteful and (in pathological cases)
+    racy if the filesystem mutated between calls.
     """
     seen: set[str] = set()
     chain: list[str] = []
+    cache: dict[str, dict[str, Any]] = {}
     cursor: str = name
     while cursor:
         if cursor in seen:
             raise RuntimeError("policy inheritance loop detected: " + " -> ".join([*chain, cursor]))
         seen.add(cursor)
         chain.append(cursor)
-        raw = _load_raw(cursor)
-        cursor = str(raw.get("inherits") or "")
+        if cursor not in cache:
+            cache[cursor] = _load_raw(cursor)
+        cursor = str(cache[chain[-1]].get("inherits") or "")
     merged: dict[str, Any] = {}
     for base_name in reversed(chain):
-        raw = _load_raw(base_name)
+        # Each base is already cached; copy so we can pop ``inherits``
+        # from the local view without mutating the cache.
+        raw = dict(cache[base_name])
         raw.pop("inherits", None)
         merged.update(raw)
     return merged
