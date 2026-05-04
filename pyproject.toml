@@ -132,8 +132,9 @@ ignore = [
 # during collection), assert is the test idiom, and magic numbers / hardcoded
 # constants are part of the test data.
 "tests/**/*.py" = ["S101", "S105", "S106", "PLR2004", "PLC0415"]
-# Examples are intentionally simple scripts, not library code.
-"examples/**/*.py" = ["PLC0415", "T201", "PLR2004"]
+# Examples are intentionally simple scripts, not library code:
+# inline imports / prints / magic numbers / sync stdlib I/O are fine.
+"examples/**/*.py" = ["PLC0415", "T201", "PLR2004", "ASYNC240"]
 
 [tool.mypy]
 python_version = "3.11"
