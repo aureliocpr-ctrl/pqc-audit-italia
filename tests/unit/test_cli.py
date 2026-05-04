@@ -66,11 +66,13 @@ def test_scan_tls_against_unreachable_host_returns_valid_json() -> None:
     assert sr["assets"] == [] or sr["errors"]
 
 
-def test_report_stub_exits_2() -> None:
+def test_report_without_input_exits_nonzero() -> None:
+    """`report` without --input is a typer usage error (missing required option)."""
     result = runner.invoke(app, ["report"])
-    assert result.exit_code == 2
+    assert result.exit_code != 0
 
 
-def test_cbom_stub_exits_2() -> None:
+def test_cbom_without_input_exits_nonzero() -> None:
+    """`cbom` without --input is a typer usage error (missing required option)."""
     result = runner.invoke(app, ["cbom"])
-    assert result.exit_code == 2
+    assert result.exit_code != 0
