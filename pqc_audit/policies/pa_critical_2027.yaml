@@ -1,0 +1,103 @@
+# PA critical 2027 — sperimentale
+#
+# Profilo strict che ANTICIPA i requisiti PQC sul perimetro
+# essenziale italiano (NIS2 art. 21 lett. h) presunti in vigore
+# entro il 2027 sulla base di:
+#
+#   - NIST IR 8547 (Transition to Post-Quantum Cryptography)
+#   - draft AgID Linee Guida 2026 §4.3 (crypto-agility roadmap)
+#   - timeline NIST FIPS 203/204/205 finalizzati Aug-2024
+#   - DORA art. 9 + RTS sull'autenticazione/cifratura forte
+#
+# La policy è OPT-IN. Eredita pa_critical e aggiunge PQC come
+# obbligatorio per nuovi deployment dopo il 2027-01-01.
+#
+# AVVISO: i thresholds e le regole qui sotto sono una proiezione
+# basata sui draft normativi. Verificare il quadro definitivo
+# AgID/ACN al momento dell'audit prima di emettere verdetti
+# vincolanti per il cliente.
+
+name: pa_critical_2027
+description: >
+  Profilo proiezione PA critica 2027 — eredita pa_critical e
+  aggiunge PQC come requisito hard per i nuovi deployment.
+  Sperimentale: validare contro le linee guida vigenti prima
+  dell'emissione di verdetti formali.
+
+inherits: pa_critical
+
+data_sensitivity_years: 50
+
+minimum_tls_version: TLSv1.3
+
+forbidden_algorithms:
+  - MD5
+  - SHA-1
+  - SHA-256             # SHA-384 minimum su PA critical 2027
+  - 3DES
+  - RC4
+  - RSA-1024
+  - RSA-2048
+  - RSA-3072
+  - RSA-4096
+  - DSA-1024
+  - DSA-2048
+  - ECDSA-P-192
+  - ECDSA-P-256         # ora forbidden, non solo discouraged
+  - ECDSA-P-384         # 50-year window forbids classical EC
+  - DH                  # classical DH forbidden
+  - ECDH                # classical ECDH forbidden
+
+discouraged_algorithms:
+  - EdDSA               # accettato solo come secondo fattore PQC hybrid
+
+required_replacements:
+  RSA: ML-DSA-87        # NIST category 5
+  DSA: ML-DSA-87
+  ECDSA: ML-DSA-87
+  EdDSA: ML-DSA-87
+  ECDH: ML-KEM-1024
+  DH: ML-KEM-1024
+  X25519: ML-KEM-1024+X25519   # hybrid mandatory
+  P-256: ML-KEM-1024+P-256
+
+required_pqc_algorithms:
+  signing:
+    - ML-DSA-87
+    - SLH-DSA-SHAKE-256s   # backup hash-based
+  kem:
+    - ML-KEM-1024
+  hybrid_acceptable_during_transition:
+    - ML-DSA-87+ECDSA-P-256
+    - ML-KEM-1024+X25519
+
+thresholds:
+  hndl_max_score: 10         # near-zero exposure tolerance
+  qday_max_score: 25
+  min_agility_score: 80
+
+extra_controls:
+  pqc_required: true
+  pqc_required_by: 2027-01-01
+  hybrid_pqc_required_by: 2026-01-01     # accept hybrid earlier
+  hsm_fips_140_3_level_4_or_higher: true
+  forbid_self_signed_on_public_pa_endpoints: true
+  signing_min_hash: SHA-512
+  document_preservation_min_hash: SHA-512
+  air_gapped_keys_required_for:
+    - root_ca
+    - code_signing
+    - boot_signing
+    - document_long_term_signing
+  audit_log_signing_required: true       # ogni log compliance firmato PQC
+  certificate_lifetime_max_days: 90      # ridotto per crypto-agility
+
+references:
+  - https://www.gazzettaufficiale.it/eli/id/2024/10/01/24G00155/sg
+  - https://www.acn.gov.it/strategia
+  - https://csrc.nist.gov/pubs/ir/8547/initial-public-draft
+  - https://csrc.nist.gov/pubs/fips/203/final
+  - https://csrc.nist.gov/pubs/fips/204/final
+  - https://csrc.nist.gov/pubs/fips/205/final
+  - https://datatracker.ietf.org/doc/rfc9794/
+  - https://eur-lex.europa.eu/eli/reg/2022/2554/oj
