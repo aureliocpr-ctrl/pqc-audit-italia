@@ -58,17 +58,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spins a stdlib SSL listener on `127.0.0.1`, presents a fresh self-signed
   RSA-2048 / SHA-256 certificate, and verifies the full enriched report
   pipeline end-to-end.
+- **Phase 1.e** — local X.509 certificate file scanner and SSH KEXINIT
+  scanner. `CertificateScanner` walks PEM / DER / CRT / CER trees with
+  symlink-skip and an 8 MB-per-file safety cap (RFC 5280 certs are
+  measured in kB; the cap protects against accidentally `.pem`-named
+  multi-GB blobs). `SSHScanner` performs a defensive RFC 4253 §7.1
+  KEXINIT parse with a 35 000-byte packet cap and bounded banner read.
+  ~30 unit tests + 2 hardening regression tests.
+- **Phase 4** — Markdown / SARIF 2.1.0 / CBOM (CycloneDX 1.6) /
+  PDF (WeasyPrint) reporters. Markdown is Italian-language and
+  executive-friendly; SARIF maps each `Vulnerability` to a `result`
+  with rule metadata; CBOM emits `cryptographic-component` entries
+  per asset. PDF is opt-in via `pip install pqc-audit-italia[pdf]`.
+  ~28 unit tests.
+- **Phase 5** — policy engine. `evaluate_against_policy(report,
+  policy)` returns a `PolicyEvaluation` with per-rule status
+  (`PASS`/`PARTIAL`/`FAIL`) and overall verdict. CLI flag
+  `--enforce` embeds the evaluation in JSON output. 4 bundled
+  policies cover NIST baseline, AgID 2026, banking Italy, and
+  PA critical profiles, with YAML inheritance for trimming
+  duplication. ~25 unit tests.
+- **CLI completeness** — `scan certs`, `scan ssh`, and `report
+  --format {json,markdown,sarif,cbom,pdf}` are now real (no longer
+  stubs). All three `scan` subcommands accept `--data-sensitivity-years`
+  to drive HNDL scoring per engagement profile.
 
 ### Quality gates
 
 - `ruff check .` — clean
 - `ruff format --check .` — clean
-- `mypy pqc_audit` (strict) — 0 issues across 14 source files
+- `mypy --strict pqc_audit/` — 0 issues across 21 source files
 - `bandit -r pqc_audit -ll` — 0 issues at any severity / confidence
-- `pytest -q` — 94 passed, coverage **≥ 89%** on the package
-- `hatch build -t wheel` — produces a clean wheel including the bundled
-  YAML policies
+- `pytest -q` — **189 passed, 2 skipped** (skipped require optional `weasyprint`), coverage **≥ 92%** on the package
+- `hatch build -t wheel` — produces a clean wheel including the
+  bundled YAML policies and `SOURCE.md` attribution
 
 ## [0.1.0] - TBD
 
-Initial alpha release placeholder.
+Initial beta release placeholder.

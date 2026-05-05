@@ -4,9 +4,10 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Status: Alpha](https://img.shields.io/badge/status-alpha-orange)](#roadmap)
+[![Status: Beta](https://img.shields.io/badge/status-beta-yellow)](#roadmap)
+[![Tests: 187 verdi](https://img.shields.io/badge/tests-189%20green-success)](#sviluppo)
 
-**English:** see [README.md](README.md).
+**English:** vedi [README.md](README.md).
 
 ---
 
@@ -14,58 +15,144 @@
 
 `pqc-audit-italia` è uno scanner open-source che identifica *dove* un'organizzazione utilizza crittografia oggi, *quanto* è esposta a **HNDL** (Harvest Now, Decrypt Later) e **Q-Day**, e *come* pianificare la migrazione verso gli standard NIST PQC (FIPS 203 / 204 / 205).
 
-Pensato per il quadro normativo italiano (NIS2 D.Lgs. 138/2024, DORA, linee guida AgID, circolari Banca d'Italia) con report compliance-ready in italiano e inglese.
+Pensato per il quadro normativo italiano (NIS2 D.Lgs. 138/2024, DORA Reg. (UE) 2022/2554, linee guida AgID, circolari Banca d'Italia) con report compliance-ready in italiano e inglese.
 
 ## Cosa NON è
 
-- Non implementa algoritmi post-quantum — usa `pyca/cryptography` e opzionalmente `liboqs-python`.
+- Non implementa algoritmi post-quantum — usa `pyca/cryptography` per il classico e si appoggia agli standard NIST per la roadmap PQC.
 - Non è uno strumento offensivo — identifica configurazioni, non sfrutta vulnerabilità.
 - Non invia telemetria, analytics o dati esterni. Funziona anche air-gapped.
 
-## Funzionalità principali
+## Funzionalità
 
-- **Scanner TLS / SSL** — handshake, catena certificati, cipher suite, algoritmi deprecati
-- **Inventario certificati** — walker PEM / DER / PKCS#12 con estrazione metadata
-- **Scanner SSH / VPN / config** — IPsec, OpenVPN, Apache, Nginx, Postfix, PostgreSQL
-- **Scanner codice e binari** — analisi statica per chiavi hardcoded e uso API crittografiche
-- **Risk scoring HNDL e Q-Day** — per asset, prioritizzato sulla vita utile della confidenzialità del dato
-- **Crypto-agility scoring** — misura quanto è facile cambiare algoritmo
-- **Mapping compliance** — NIS2 art. 21, DORA art. 9, linee guida AgID, ISO 27001 A.10
-- **Export CBOM CycloneDX 1.6** — standard emergente di settore
-- **Report PDF executive in italiano** pronti per audit interni o esterni
+| Capacità | Stato | Dettaglio |
+|---|---|---|
+| Scanner TLS / SSL | Pronto | Handshake, catena X.509, cipher suite, signature algorithm, hash, key size |
+| Inventario certificati | Pronto | Walker PEM / DER / CRT / CER ricorsivo, simlink-safe, cap 8 MB per file |
+| Scanner SSH (KEXINIT) | Pronto | Banner + algoritmi key exchange / cipher / MAC, RFC 4253-safe |
+| Risk scoring HNDL e Q-Day | Pronto | Score 0-100 per asset, lifetime confidenzialità configurabile |
+| Crypto-agility scoring | Pronto | Misura riusabilità del path crittografico nel software |
+| Policy engine | Pronto | 4 policy bundled (vedi sotto), evaluation PASS / PARTIAL / FAIL |
+| Reporter JSON | Pronto | Output strutturato per pipeline e dashboard |
+| Reporter Markdown | Pronto | Italiano, executive-friendly |
+| Reporter SARIF 2.1.0 | Pronto | GitHub code scanning, GitLab SAST |
+| Reporter CBOM CycloneDX 1.6 | Pronto | Standard emergente per crypto BOM |
+| Reporter PDF | Pronto | WeasyPrint-backed (opzionale) |
+| Mapping compliance | Pronto | NIS2 art. 21, DORA art. 9, AgID Linee Guida, ISO 27001 A.10 |
+
+### Policy bundled
+
+| Nome | Per chi | Riferimento |
+|---|---|---|
+| `nist_baseline` | Default conservativo | NIST FIPS 203/204/205 + SP 800-227 |
+| `agid_2026` | PA italiana | AgID Linee Guida + Misure minime di sicurezza ICT |
+| `banking_italy` | Banche e SIM | Banca d'Italia + DORA |
+| `pa_critical` | Sanità, sicurezza pubblica, infrastrutture | NIS2 D.Lgs. 138/2024, profilo strict |
 
 ## Avvio rapido
 
+### Installazione
+
 ```bash
-pip install pqc-audit-italia          # non ancora su PyPI; usa git per ora
-pqc-audit scan tls --host example.it --port 443
-pqc-audit scan filesystem --path /etc/ssl
-pqc-audit report --input results.json --format pdf --policy agid_2026
-pqc-audit cbom --input results.json --output cbom.cdx.json
+git clone https://github.com/<your-org>/pqc-audit-italia.git
+cd pqc-audit-italia
+pip install -e ".[dev]"
 ```
+
+### Scan TLS
+
+```bash
+pqc-audit scan tls --host www.agid.gov.it --port 443 \
+                   --policy agid_2026 \
+                   --data-sensitivity-years 30
+```
+
+### Scan certificati locali
+
+```bash
+pqc-audit scan certs --path /etc/ssl/certs \
+                     --policy banking_italy \
+                     --data-sensitivity-years 20
+```
+
+### Scan SSH
+
+```bash
+pqc-audit scan ssh --host server.example.it --port 22 \
+                   --policy nist_baseline
+```
+
+### Re-render report
+
+Il flusso prevede `scan` → JSON, poi `report` per generare formati derivati:
+
+```bash
+pqc-audit scan tls --host example.it > scan.json
+pqc-audit report -i scan.json -f markdown
+pqc-audit report -i scan.json -f sarif > findings.sarif
+pqc-audit report -i scan.json -f cbom   > cbom.cdx.json
+pqc-audit report -i scan.json -f pdf    -o report.pdf
+```
+
+### Enforcement contro policy
+
+```bash
+pqc-audit scan tls --host example.it --enforce --policy agid_2026
+```
+
+Il JSON di output include il blocco `policy_evaluation` con verdetto PASS / PARTIAL / FAIL e dettaglio per regola.
 
 ## API Python
 
 ```python
+import asyncio
 from pqc_audit import Auditor, ScanTarget
 
-auditor = Auditor(policy="agid_2026")
-results = await auditor.scan([
-    ScanTarget(type="tls", host="example.it", port=443),
-    ScanTarget(type="filesystem", path="/etc/ssl"),
-])
-report = auditor.generate_report(results, format="pdf")
+auditor = Auditor(policy="agid_2026", data_sensitivity_years=30)
+report = asyncio.run(auditor.scan([
+    ScanTarget(type="tls", host="www.agid.gov.it", port=443),
+    ScanTarget(type="certs", path="/etc/ssl/certs"),
+]))
+
+# Re-rendering
+from pqc_audit.reporters.markdown_reporter import render as md
+print(md(report))
+
+# Policy evaluation
+evaluation = auditor.evaluate_against_policy(report)
+print(evaluation.verdict)  # PASS / PARTIAL / FAIL
 ```
 
 ## Roadmap
 
-- [x] Fase 0 — scheletro repo, CI, licenza
-- [ ] Fase 1 — modelli core, scanner TLS / certificati / SSH, reporter JSON
-- [ ] Fase 2 — scanner VPN / filesystem / binari / codice / config / token
-- [ ] Fase 3 — classificatori HNDL / agility / compliance
-- [ ] Fase 4 — reporter PDF / SARIF / Markdown / CBOM
-- [ ] Fase 5 — policy engine (baseline NIST, AgID, banking IT, PA critica)
-- [ ] Fase 6 — rifinitura CLI, esempi, sito docs
+- [x] Fase 0 — scheletro repo, CI, licenza AGPL-3.0
+- [x] Fase 1 — modelli core, scanner TLS / certificati / SSH, reporter JSON
+- [x] Fase 2 — risk scoring HNDL, Q-Day, crypto-agility
+- [x] Fase 3 — classificatori e raccomandazioni P1-P5 (incl. hybrid intermediate)
+- [x] Fase 4 — reporter PDF / SARIF / Markdown / CBOM
+- [x] Fase 5 — policy engine (4 policy bundled, PASS/PARTIAL/FAIL)
+- [ ] Fase 6 — pubblicazione su PyPI, sito docs, CI/CD GitHub Actions complete
+- [ ] Fase 7 — scanner aggiuntivi (VPN, codice/binari, secret in env)
+- [ ] Fase 8 — UI web (opzionale, separato)
+
+## Sviluppo
+
+```bash
+pip install -e ".[dev]"
+pytest -q              # 189 test verdi (~92% coverage)
+ruff check .           # linter
+mypy --strict pqc_audit/  # type checker (clean)
+```
+
+Repo regolato da CLA (vedi `CONTRIBUTING.md`). I PR esterni passano CI prima del merge.
+
+## Casi d'uso target
+
+- **PA italiana**: audit conformità AgID Linee Guida prima di gare CONSIP / Sogei.
+- **Banche / SIM**: due-diligence DORA pre-audit Banca d'Italia.
+- **Sanità (NIS2 essential entities)**: inventario crittografico per art. 21 D.Lgs. 138/2024.
+- **PMI fornitrici della PA**: dimostrare crypto-readiness ai propri clienti pubblici.
+- **Penetration tester / consulenti**: deliverable executive in italiano post-audit.
 
 ## Disclaimer
 
@@ -75,7 +162,7 @@ I riferimenti normativi rimandano direttamente alle fonti ufficiali: [Gazzetta U
 
 ## Licenza
 
-AGPL-3.0-only. Chi offre questo come Software-as-a-Service deve rilasciare le proprie modifiche. Vedi [LICENSE](LICENSE) e [CONTRIBUTING.md](CONTRIBUTING.md) (CLA richiesto).
+AGPL-3.0-only. Chi offre questo come Software-as-a-Service deve rilasciare le proprie modifiche con la stessa licenza. Vedi [LICENSE](LICENSE) e [CONTRIBUTING.md](CONTRIBUTING.md) (CLA richiesto per PR esterni).
 
 ## Autore
 
