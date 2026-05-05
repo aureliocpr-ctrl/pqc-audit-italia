@@ -120,7 +120,11 @@ print(md(report))
 
 # Policy evaluation
 evaluation = auditor.evaluate_against_policy(report)
-print(evaluation.verdict)  # PASS / PARTIAL / FAIL
+print(evaluation.overall_verdict)         # PASS / PARTIAL / FAIL
+print(evaluation.compliant_assets, "/",
+      evaluation.total_assets_evaluated)
+for v in evaluation.violations:
+    print(v.rule, v.severity, v.remediation)
 ```
 
 ## Roadmap
