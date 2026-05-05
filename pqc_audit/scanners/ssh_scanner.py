@@ -71,6 +71,27 @@ _NAME_LIST_FIELDS = (
 )
 
 
+# SSH protocol extension markers — NOT cryptographic algorithms.
+# Servers advertise these inside ``kex_algorithms`` to negotiate
+# protocol features (RFC 8308 ``ext-info-s``/``ext-info-c``,
+# draft-miller-sshm-strict-kex ``kex-strict-s-v00`` /
+# ``kex-strict-c-v00``). The KEXINIT format reuses the kex name-list
+# as a transport for these signals, but they have no algorithm
+# semantics — including them as "crypto assets" pollutes asset
+# inventories and downstream policy evaluation. Skip silently.
+_KEX_EXTENSION_MARKERS: frozenset[str] = frozenset({
+    "ext-info-s",
+    "ext-info-c",
+    "kex-strict-s-v00@openssh.com",
+    "kex-strict-c-v00@openssh.com",
+})
+
+
+def _is_kex_extension_marker(name: str) -> bool:
+    """True if ``name`` is an SSH KEX extension signal, not an algorithm."""
+    return name.lower() in _KEX_EXTENSION_MARKERS
+
+
 # ---------------------------------------------------------------------------
 # Deprecated / weak algorithm tables
 # ---------------------------------------------------------------------------
@@ -231,6 +252,11 @@ def assess_ssh_endpoint(
 
     # KEX algorithms
     for raw in kex_data.get("kex", []) or []:
+        # Protocol extension markers (ext-info, kex-strict) are not
+        # cryptographic algorithms — skip them so they don't end up in
+        # the asset inventory or trigger findings.
+        if _is_kex_extension_marker(raw):
+            continue
         alg_name = _kex_to_algorithm_name(raw)
         algorithms.append(Algorithm(name=alg_name))
         if raw in _DEPRECATED_KEX:

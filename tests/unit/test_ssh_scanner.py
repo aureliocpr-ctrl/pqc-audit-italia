@@ -189,6 +189,39 @@ def test_assess_ssh_dh_group1_flagged() -> None:
     assert any("md5" in t or "hmac-md5" in t for t in titles)
 
 
+def test_assess_ssh_skips_kex_strict_extension_marker() -> None:
+    """RFC-style strict-kex extension markers (``kex-strict-s-v00@openssh.com``,
+    ``kex-strict-c-v00@openssh.com``) and EXT_INFO (``ext-info-s``,
+    ``ext-info-c``) are SSH protocol extension signals, NOT cryptographic
+    algorithms. They MUST not appear in the algorithm list nor produce
+    findings. Real example: github.com:22 advertises kex-strict-s-v00 in
+    its KEXINIT, and we currently surface it as a NETWORK asset, which
+    pollutes asset counts for downstream policy evaluation.
+    """
+    from pqc_audit.scanners.ssh_scanner import assess_ssh_endpoint
+
+    kex_data = {
+        "kex": [
+            "sntrup761x25519-sha512",
+            "curve25519-sha256",
+            "kex-strict-s-v00@openssh.com",
+            "ext-info-s",
+        ],
+        "server_host_key": ["ssh-ed25519"],
+        "encryption_c2s": ["chacha20-poly1305@openssh.com"],
+        "encryption_s2c": ["chacha20-poly1305@openssh.com"],
+        "mac_c2s": ["hmac-sha2-256-etm@openssh.com"],
+        "mac_s2c": ["hmac-sha2-256-etm@openssh.com"],
+    }
+    algorithms, vulns = assess_ssh_endpoint("SSH-2.0-OpenSSH_9.6", kex_data)
+    alg_names = [a.name.lower() for a in algorithms]
+    assert "kex-strict-s-v00@openssh.com" not in alg_names
+    assert "ext-info-s" not in alg_names
+    assert not any("kex-strict" in n or "ext-info" in n for n in alg_names)
+    titles = [v.title.lower() for v in vulns]
+    assert not any("kex-strict" in t or "ext-info" in t for t in titles)
+
+
 def test_assess_ssh_quantum_vulnerable_kex_flagged() -> None:
     """Every classical KEX is quantum-vulnerable — surface at least one finding."""
     from pqc_audit.scanners.ssh_scanner import assess_ssh_endpoint
