@@ -160,7 +160,12 @@ def _scan_one_file(path: Path) -> tuple[CryptoAsset | None, list[Vulnerability],
 
     asset = cert_to_asset(cert, path)
     hash_name = extract_signature_hash_name(cert)
-    assert asset.key_material is not None  # cert_to_asset always populates it
+    # cert_to_asset always populates key_material; this guard makes
+    # the invariant explicit at runtime (survives ``python -O``).
+    if asset.key_material is None:  # pragma: no cover — invariant
+        return None, [], (
+            f"{path}: internal error — KeyMaterial unexpectedly missing."
+        )
     vulns = assess_certificate(
         asset.algorithm,
         asset.key_material,

@@ -234,7 +234,11 @@ def report_cmd(
         except RuntimeError as e:
             typer.echo(f"error: {e}", err=True)
             raise typer.Exit(code=2) from e
-        assert output is not None  # guarded above
+        # Already guarded above (--format pdf requires --output) but
+        # we make the invariant explicit at runtime so the type
+        # narrowing survives ``python -O``.
+        if output is None:  # pragma: no cover — guard above already exits
+            raise typer.Exit(code=2)
         Path(output).write_bytes(pdf_bytes)
         return
 
@@ -355,7 +359,11 @@ def batch_cmd(
     if targets:
         target_list = parse_inline_targets(targets)
     else:
-        assert csv_path is not None
+        # csv_path is non-None here: the mutex check above ensures
+        # exactly one of --targets / --csv is supplied. Make the
+        # invariant survive ``python -O``.
+        if csv_path is None:  # pragma: no cover — mutex above
+            raise typer.Exit(code=2)
         target_list = parse_csv(Path(csv_path))
 
     if not target_list:
