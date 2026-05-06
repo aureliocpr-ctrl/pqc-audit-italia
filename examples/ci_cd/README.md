@@ -56,3 +56,23 @@ A blocked run prints additionally:
 - **Sensitive data**: pump `--data-sensitivity-years 50` for
   long-retention systems (medical, legal archives) so HNDL tracks
   the right horizon.
+
+## Native SARIF output for GitLab/GitHub Code Scanning
+
+`batch_report.json` is a list of per-host audit dicts. To feed
+the GitLab "Security & Compliance" dashboard or GitHub Code
+Scanning natively, convert it to SARIF 2.1.0:
+
+```bash
+python examples/ci_cd/batch_to_sarif.py \
+    --input  artefacts/pqc/batch_report.json \
+    --output artefacts/pqc/batch_report.sarif
+```
+
+The script aggregates per-host vulnerabilities + policy violations
+into one `runs[0].results[]` array. Severity mapping:
+`critical|high → error`, `medium → warning`, otherwise `note`.
+
+In GitLab CI add `reports: { sast: batch_report.sarif }` on the
+job artefacts; in GitHub Actions use the `github/codeql-action/upload-sarif`
+action.
