@@ -1,0 +1,51 @@
+# Pre-commit hook configuration for pqc-audit-italia.
+#
+# Install:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Then every ``git commit`` runs:
+#   - ruff check (zero policy)
+#   - ruff format --check (zero policy)
+#   - mypy --strict on pqc_audit/
+#   - bandit on pqc_audit/ (zero HIGH)
+#   - pytest tests/unit (fast, < 30 sec)
+#
+# CI matrix on GitHub Actions covers tests/integration as well —
+# the local hook stays fast for daily commit ergonomics.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix-only]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        args: [--strict]
+        files: ^pqc_audit/
+        additional_dependencies:
+          - pydantic>=2.5
+          - cryptography>=42.0
+          - typer>=0.12
+          - types-PyYAML>=6.0
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        args: ["-r", "pqc_audit/", "-ll"]
+        files: ^pqc_audit/
+
+  - repo: local
+    hooks:
+      - id: pytest-unit
+        name: pytest unit suite (fast)
+        entry: python -m pytest tests/unit -q --no-cov
+        language: system
+        pass_filenames: false
+        always_run: true
