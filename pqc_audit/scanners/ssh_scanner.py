@@ -79,12 +79,14 @@ _NAME_LIST_FIELDS = (
 # as a transport for these signals, but they have no algorithm
 # semantics — including them as "crypto assets" pollutes asset
 # inventories and downstream policy evaluation. Skip silently.
-_KEX_EXTENSION_MARKERS: frozenset[str] = frozenset({
-    "ext-info-s",
-    "ext-info-c",
-    "kex-strict-s-v00@openssh.com",
-    "kex-strict-c-v00@openssh.com",
-})
+_KEX_EXTENSION_MARKERS: frozenset[str] = frozenset(
+    {
+        "ext-info-s",
+        "ext-info-c",
+        "kex-strict-s-v00@openssh.com",
+        "kex-strict-c-v00@openssh.com",
+    }
+)
 
 
 def _is_kex_extension_marker(name: str) -> bool:
@@ -414,9 +416,7 @@ async def _read_kexinit_packet(reader: asyncio.StreamReader, timeout_s: float) -
     if packet_length > _MAX_SSH_PACKET:
         # RFC 4253 §6.1 caps packet_length at 35000 bytes. A larger value
         # signals either a buggy or hostile peer trying to exhaust RAM.
-        raise ValueError(
-            f"oversized SSH packet: pkt_len={packet_length} > {_MAX_SSH_PACKET}"
-        )
+        raise ValueError(f"oversized SSH packet: pkt_len={packet_length} > {_MAX_SSH_PACKET}")
     payload_len = packet_length - padding_length - 1
     rest = await asyncio.wait_for(
         reader.readexactly(payload_len + padding_length), timeout=timeout_s

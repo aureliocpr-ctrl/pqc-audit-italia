@@ -74,9 +74,7 @@ def parse_certificate_file(path: Path) -> x509.Certificate:
     except OSError as exc:
         raise ValueError(f"unable to stat {path}: {exc}") from exc
     if size > _MAX_CERT_BYTES:
-        raise ValueError(
-            f"certificate file too large: {size} bytes > {_MAX_CERT_BYTES} cap"
-        )
+        raise ValueError(f"certificate file too large: {size} bytes > {_MAX_CERT_BYTES} cap")
     raw = path.read_bytes()
     try:
         if b"-----BEGIN CERTIFICATE-----" in raw:
@@ -163,9 +161,7 @@ def _scan_one_file(path: Path) -> tuple[CryptoAsset | None, list[Vulnerability],
     # cert_to_asset always populates key_material; this guard makes
     # the invariant explicit at runtime (survives ``python -O``).
     if asset.key_material is None:  # pragma: no cover — invariant
-        return None, [], (
-            f"{path}: internal error — KeyMaterial unexpectedly missing."
-        )
+        return None, [], (f"{path}: internal error — KeyMaterial unexpectedly missing.")
     vulns = assess_certificate(
         asset.algorithm,
         asset.key_material,

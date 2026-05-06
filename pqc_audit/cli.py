@@ -408,9 +408,7 @@ def batch_cmd(
     if fail_on_violations:
         # Trip the CI gate when ANY row reports an error or a FAIL verdict.
         bad = sum(
-            1 for r in rows
-            if r.get("status") == "error"
-            or r.get("policy_verdict") == "FAIL"
+            1 for r in rows if r.get("status") == "error" or r.get("policy_verdict") == "FAIL"
         )
         if bad:
             typer.echo(

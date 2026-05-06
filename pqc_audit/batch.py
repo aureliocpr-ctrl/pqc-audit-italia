@@ -181,9 +181,7 @@ def render_markdown(
     ok = sum(1 for r in rows if r["status"] == "ok")
     err = n - ok
     high = sum(
-        1
-        for r in rows
-        if r["status"] == "ok" and (r.get("hndl") or 0) >= _HNDL_HIGH_THRESHOLD
+        1 for r in rows if r["status"] == "ok" and (r.get("hndl") or 0) >= _HNDL_HIGH_THRESHOLD
     )
     pqc_present = sum(
         1
@@ -223,10 +221,7 @@ def render_markdown(
                 f"{verdict_cell} | {r['top_reco']} |"
             )
         else:
-            lines.append(
-                f"| `{r['host']}` | (errore) | — | — | — | — | "
-                f"{r.get('error', '?')} |"
-            )
+            lines.append(f"| `{r['host']}` | (errore) | — | — | — | — | {r.get('error', '?')} |")
     lines.append("")
     if pqc_present == 0 and ok > 0:
         lines.append(

@@ -39,9 +39,7 @@ def _generate_self_signed_rsa(out_dir: Path) -> tuple[Path, Path]:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    subject = issuer = x509.Name(
-        [x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")]
-    )
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
     san = x509.SubjectAlternativeName(
         [
             x509.DNSName("localhost"),
@@ -73,9 +71,7 @@ def _generate_self_signed_rsa(out_dir: Path) -> tuple[Path, Path]:
     return key_path, cert_path
 
 
-def _serve_one_handshake(
-    cert_path: Path, key_path: Path
-) -> tuple[str, int, threading.Event]:
+def _serve_one_handshake(cert_path: Path, key_path: Path) -> tuple[str, int, threading.Event]:
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
 
@@ -118,10 +114,13 @@ def test_batch_cli_against_local_server_emits_all_three(tmp_path: Path) -> None:
         app,
         [
             "batch",
-            "--targets", f"{host}:{port}",
-            "--policy", "agid_2026",
+            "--targets",
+            f"{host}:{port}",
+            "--policy",
+            "agid_2026",
             "--enforce",
-            "--out", str(out),
+            "--out",
+            str(out),
         ],
     )
     assert result.exit_code == 0, result.stdout + result.stderr
@@ -175,11 +174,14 @@ def test_batch_cli_fail_on_violations_exits_3(tmp_path: Path) -> None:
         app,
         [
             "batch",
-            "--targets", f"{host}:{port}",
-            "--policy", "agid_2026",
+            "--targets",
+            f"{host}:{port}",
+            "--policy",
+            "agid_2026",
             "--enforce",
             "--fail-on-violations",
-            "--out", str(out),
+            "--out",
+            str(out),
         ],
     )
     assert result.exit_code == 3, (

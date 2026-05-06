@@ -158,10 +158,7 @@ def _verdict_class(v: str) -> str:
 
 
 def _has_pqc(algorithm: str) -> bool:
-    return any(
-        p in (algorithm or "")
-        for p in ("ML-DSA", "ML-KEM", "SLH-DSA", "sntrup", "FALCON")
-    )
+    return any(p in (algorithm or "") for p in ("ML-DSA", "ML-KEM", "SLH-DSA", "sntrup", "FALCON"))
 
 
 def render(
@@ -196,20 +193,15 @@ def render(
     ok = sum(1 for r in rows if r.get("status") == "ok")
     err = n - ok
     high = sum(
-        1
-        for r in rows
-        if r.get("status") == "ok" and (r.get("hndl") or 0) >= _HNDL_HIGH_THRESHOLD
+        1 for r in rows if r.get("status") == "ok" and (r.get("hndl") or 0) >= _HNDL_HIGH_THRESHOLD
     )
     pqc_present = sum(
-        1
-        for r in rows
-        if r.get("status") == "ok" and _has_pqc(r.get("algorithm") or "")
+        1 for r in rows if r.get("status") == "ok" and _has_pqc(r.get("algorithm") or "")
     )
     fails = sum(
         1
         for r in rows
-        if r.get("status") == "ok"
-        and (r.get("policy_verdict") or "").upper().startswith("FAIL")
+        if r.get("status") == "ok" and (r.get("policy_verdict") or "").upper().startswith("FAIL")
     )
 
     body_rows: list[str] = []
@@ -283,22 +275,16 @@ def render(
         "</div>",
         "</header>",
         '<div class="summary-numbers">',
-        f'<div class="card"><div class="v">{n}</div>'
-        '<div class="l">Target totali</div></div>',
-        f'<div class="card"><div class="v">{ok}</div>'
-        '<div class="l">Scansionati ok</div></div>',
-        f'<div class="card"><div class="v">{err}</div>'
-        '<div class="l">Errori</div></div>',
-        f'<div class="card"><div class="v">{high}</div>'
-        '<div class="l">HNDL ≥ 80</div></div>',
+        f'<div class="card"><div class="v">{n}</div><div class="l">Target totali</div></div>',
+        f'<div class="card"><div class="v">{ok}</div><div class="l">Scansionati ok</div></div>',
+        f'<div class="card"><div class="v">{err}</div><div class="l">Errori</div></div>',
+        f'<div class="card"><div class="v">{high}</div><div class="l">HNDL ≥ 80</div></div>',
         f'<div class="card"><div class="v">{pqc_present}</div>'
         '<div class="l">PQC negoziato</div></div>',
-        f'<div class="card"><div class="v">{fails}</div>'
-        '<div class="l">FAIL policy</div></div>',
+        f'<div class="card"><div class="v">{fails}</div><div class="l">FAIL policy</div></div>',
         "</div>",
         '<div class="controls">',
-        '<input id="host-filter" type="text" '
-        'placeholder="Filtra per host (filter)…">',
+        '<input id="host-filter" type="text" placeholder="Filtra per host (filter)…">',
         '<button id="csv-dl" type="button">Scarica CSV</button>',
         "</div>",
         "<table>",

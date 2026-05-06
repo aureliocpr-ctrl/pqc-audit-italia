@@ -75,9 +75,7 @@ def test_render_returns_full_html_document() -> None:
 
 def test_render_inserts_one_row_per_host() -> None:
     rows = [_row_ok(host="a.gov.it"), _row_ok(host="b.gov.it")]
-    html = html_batch_reporter.render(
-        rows, policy="agid_2026", sensitivity=10, enforce=True
-    )
+    html = html_batch_reporter.render(rows, policy="agid_2026", sensitivity=10, enforce=True)
     assert 'data-host="a.gov.it"' in html
     assert 'data-host="b.gov.it"' in html
 
@@ -122,17 +120,13 @@ def test_render_includes_policy_metadata_header() -> None:
 
 def test_render_no_pqc_note_when_all_classical() -> None:
     rows = [_row_ok(algorithm="RSA-2048", top_reco="ML-DSA-65")]
-    html = html_batch_reporter.render(
-        rows, policy="agid_2026", sensitivity=10, enforce=True
-    )
+    html = html_batch_reporter.render(rows, policy="agid_2026", sensitivity=10, enforce=True)
     assert "P5" in html or "ML-DSA" in html
 
 
 def test_render_skips_no_pqc_note_when_pqc_present() -> None:
     rows = [_row_ok(algorithm="ML-DSA-65")]
-    html = html_batch_reporter.render(
-        rows, policy="agid_2026", sensitivity=10, enforce=True
-    )
+    html = html_batch_reporter.render(rows, policy="agid_2026", sensitivity=10, enforce=True)
     # The ``uniformemente P5`` warning should NOT appear when the
     # batch already shows a PQC-negotiated host. The substring is
     # specific enough that we can pin it.
@@ -185,9 +179,7 @@ def test_render_includes_csv_download_button() -> None:
 
 
 def test_render_handles_empty_rows() -> None:
-    html = html_batch_reporter.render(
-        [], policy="agid_2026", sensitivity=10, enforce=True
-    )
+    html = html_batch_reporter.render([], policy="agid_2026", sensitivity=10, enforce=True)
     # Even with 0 hosts the page is still a valid document. We
     # don't want a stack trace and we don't want an empty file.
     assert "<html" in html
@@ -198,9 +190,7 @@ def test_render_marks_high_hndl_rows_visually() -> None:
     """Rows with HNDL >= 80 must carry a CSS class so the doc
     surfaces "this is the bad one" without reading the number."""
     rows = [_row_ok(hndl=80), _row_ok(hndl=20)]
-    html = html_batch_reporter.render(
-        rows, policy="agid_2026", sensitivity=10, enforce=True
-    )
+    html = html_batch_reporter.render(rows, policy="agid_2026", sensitivity=10, enforce=True)
     # Some marker on at least one row that ties to severity.
     # We accept either a row class or a cell class; we just want
     # a stable hook.

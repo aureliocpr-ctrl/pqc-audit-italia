@@ -136,12 +136,9 @@ def test_compare_batches_handles_error_entries() -> None:
 
 def test_render_diff_markdown_contains_all_sections() -> None:
     prev = [_entry("a.it", verdict="FAIL"), _entry("b.it", verdict="PASS")]
-    curr = [_entry("a.it", verdict="PASS"), _entry("b.it", verdict="FAIL"),
-            _entry("c.it")]
+    curr = [_entry("a.it", verdict="PASS"), _entry("b.it", verdict="FAIL"), _entry("c.it")]
     diff = batch_diff.compare_batches(prev, curr)
-    md = batch_diff.render_diff_markdown(
-        diff, before_label="2026-04", after_label="2026-05"
-    )
+    md = batch_diff.render_diff_markdown(diff, before_label="2026-04", after_label="2026-05")
     assert "improved" in md.lower() or "migliorati" in md.lower()
     assert "regressed" in md.lower() or "peggiorati" in md.lower()
     assert "a.it" in md

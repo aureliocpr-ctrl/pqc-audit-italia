@@ -123,9 +123,7 @@ def test_render_markdown_includes_header_and_table() -> None:
         },
         {"host": "err.example", "status": "error", "error": "Boom"},
     ]
-    md = batch_mod.render_markdown(
-        rows, policy="agid_2026", sensitivity=15, enforce=False
-    )
+    md = batch_mod.render_markdown(rows, policy="agid_2026", sensitivity=15, enforce=False)
     assert md.startswith("# Batch PQC audit")
     assert "| Host |" in md
     assert "ok.example" in md and "ECDSA-256" in md
@@ -154,7 +152,10 @@ def test_run_batch_concurrency_caps_in_flight(monkeypatch) -> None:
 
     pairs_seq = asyncio.run(
         batch_mod.run_batch(
-            targets, policy="agid_2026", sensitivity=15, enforce=False,
+            targets,
+            policy="agid_2026",
+            sensitivity=15,
+            enforce=False,
             concurrency=1,
         )
     )
@@ -166,15 +167,17 @@ def test_run_batch_concurrency_caps_in_flight(monkeypatch) -> None:
     in_flight["peak"] = 0
     pairs_par = asyncio.run(
         batch_mod.run_batch(
-            targets, policy="agid_2026", sensitivity=15, enforce=False,
+            targets,
+            policy="agid_2026",
+            sensitivity=15,
+            enforce=False,
             concurrency=3,
         )
     )
     assert len(pairs_par) == 6
     # The semaphore must cap parallelism, but it must allow >1.
     assert 1 < in_flight["peak"] <= 3, (
-        f"concurrency=3 should cap at 3 (and exceed 1), "
-        f"got peak={in_flight['peak']}"
+        f"concurrency=3 should cap at 3 (and exceed 1), got peak={in_flight['peak']}"
     )
 
     # Pairing is preserved in both modes.
@@ -196,9 +199,7 @@ def test_render_markdown_pqc_zero_emits_p5_warning() -> None:
             "top_reco": "ML-DSA-65",
         }
     ]
-    md = batch_mod.render_markdown(
-        rows, policy="agid_2026", sensitivity=15, enforce=False
-    )
+    md = batch_mod.render_markdown(rows, policy="agid_2026", sensitivity=15, enforce=False)
     assert "P5" in md
 
 
@@ -225,9 +226,12 @@ def test_batch_inline_targets_writes_md_and_json(tmp_path: Path) -> None:
         app,
         [
             "batch",
-            "--targets", "127.0.0.1:1",
-            "--policy", "nist_baseline",
-            "--out", str(out),
+            "--targets",
+            "127.0.0.1:1",
+            "--policy",
+            "nist_baseline",
+            "--out",
+            str(out),
         ],
     )
     assert result.exit_code == 0, result.stdout + result.stderr
@@ -253,9 +257,12 @@ def test_batch_csv_input(tmp_path: Path) -> None:
         app,
         [
             "batch",
-            "--csv", str(csv_path),
-            "--policy", "nist_baseline",
-            "--out", str(out),
+            "--csv",
+            str(csv_path),
+            "--policy",
+            "nist_baseline",
+            "--out",
+            str(out),
         ],
     )
     assert result.exit_code == 0, result.stdout + result.stderr
@@ -276,9 +283,12 @@ def test_batch_emits_html_report(tmp_path: Path) -> None:
         app,
         [
             "batch",
-            "--targets", "127.0.0.1:1",
-            "--policy", "nist_baseline",
-            "--out", str(out),
+            "--targets",
+            "127.0.0.1:1",
+            "--policy",
+            "nist_baseline",
+            "--out",
+            str(out),
         ],
     )
     assert result.exit_code == 0, result.stdout + result.stderr
@@ -307,10 +317,12 @@ def test_batch_fail_on_violations_returns_nonzero_when_fail(tmp_path: Path) -> N
     pipeline can block the build. Uses a stub run_one to inject
     a deterministic FAIL verdict without touching the network."""
     fail_payload = {
-        "scan_results": [{
-            "assets": [{"algorithm": {"name": "RSA", "key_size_bits": 2048}}],
-            "vulnerabilities": [],
-        }],
+        "scan_results": [
+            {
+                "assets": [{"algorithm": {"name": "RSA", "key_size_bits": 2048}}],
+                "vulnerabilities": [],
+            }
+        ],
         "metadata": {"risk_summary": {"hndl_max": 100, "qday_max": 80}},
         "recommendations": [{"to_algorithm": "ML-DSA-65", "priority": 5}],
         "policy_evaluation": {
@@ -324,16 +336,20 @@ def test_batch_fail_on_violations_returns_nonzero_when_fail(tmp_path: Path) -> N
 
     out = tmp_path / "out"
     from unittest.mock import patch
+
     with patch.object(batch_mod, "run_one", _fake_run_one):
         result = runner.invoke(
             app,
             [
                 "batch",
-                "--targets", "bad.example",
-                "--policy", "agid_2026",
+                "--targets",
+                "bad.example",
+                "--policy",
+                "agid_2026",
                 "--enforce",
                 "--fail-on-violations",
-                "--out", str(out),
+                "--out",
+                str(out),
             ],
         )
 
@@ -372,28 +388,28 @@ def test_batch_fail_on_violations_zero_when_clean() -> None:
         # We can't monkeypatch via CliRunner cleanly, so go straight
         # at the helper layer.
         from unittest.mock import patch
+
         with patch.object(_batch_mod, "run_one", _fake_run_one):
             result = runner.invoke(
                 app,
                 [
                     "batch",
-                    "--targets", "ok1.example,ok2.example",
-                    "--policy", "agid_2026",
+                    "--targets",
+                    "ok1.example,ok2.example",
+                    "--policy",
+                    "agid_2026",
                     "--enforce",
                     "--fail-on-violations",
-                    "--out", out,
+                    "--out",
+                    out,
                 ],
             )
         assert result.exit_code == 0, (
-            f"expected exit 0 when all hosts PASS; got {result.exit_code}\n"
-            f"{result.stdout}"
+            f"expected exit 0 when all hosts PASS; got {result.exit_code}\n{result.stdout}"
         )
-        payload = json.loads(
-            (Path(out) / "batch_report.json").read_text(encoding="utf-8")
-        )
+        payload = json.loads((Path(out) / "batch_report.json").read_text(encoding="utf-8"))
         assert all(
-            p.get("policy_evaluation", {}).get("overall_verdict") == "PASS"
-            for p in payload
+            p.get("policy_evaluation", {}).get("overall_verdict") == "PASS" for p in payload
         ), payload
 
 
@@ -409,13 +425,14 @@ def test_batch_empty_csv_exits_nonzero(tmp_path: Path) -> None:
         app,
         [
             "batch",
-            "--csv", str(csv_path),
-            "--out", str(out),
+            "--csv",
+            str(csv_path),
+            "--out",
+            str(out),
         ],
     )
     assert result.exit_code != 0, (
-        "expected non-zero exit on empty CSV; "
-        f"got {result.exit_code}\n{result.stdout}"
+        f"expected non-zero exit on empty CSV; got {result.exit_code}\n{result.stdout}"
     )
     haystack = (result.stdout + (result.stderr or "")).lower()
     assert "no targets" in haystack or "empty" in haystack, (
@@ -433,8 +450,10 @@ def test_batch_csv_handles_utf8_bom(tmp_path: Path) -> None:
         app,
         [
             "batch",
-            "--csv", str(p),
-            "--out", str(out),
+            "--csv",
+            str(p),
+            "--out",
+            str(out),
         ],
     )
     assert result.exit_code == 0, result.stdout + result.stderr

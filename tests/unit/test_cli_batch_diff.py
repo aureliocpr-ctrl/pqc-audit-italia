@@ -18,9 +18,7 @@ runner = CliRunner()
 
 
 def _write_batch(path: Path, entries: list[dict]) -> None:
-    path.write_text(
-        json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    path.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def _audit(host: str, *, algorithm: str = "RSA-2048", verdict: str = "FAIL") -> dict:
@@ -73,9 +71,12 @@ def test_batch_diff_emits_markdown_with_correct_buckets(tmp_path: Path) -> None:
         app,
         [
             "batch-diff",
-            "--before", str(before),
-            "--after", str(after),
-            "--out", str(out_md),
+            "--before",
+            str(before),
+            "--after",
+            str(after),
+            "--out",
+            str(out_md),
         ],
     )
     assert result.exit_code == 0, result.stdout + result.stderr
@@ -97,9 +98,12 @@ def test_batch_diff_validates_input_paths(tmp_path: Path) -> None:
         app,
         [
             "batch-diff",
-            "--before", str(tmp_path / "missing-before.json"),
-            "--after", str(tmp_path / "missing-after.json"),
-            "--out", str(tmp_path / "diff.md"),
+            "--before",
+            str(tmp_path / "missing-before.json"),
+            "--after",
+            str(tmp_path / "missing-after.json"),
+            "--out",
+            str(tmp_path / "diff.md"),
         ],
     )
     assert result.exit_code != 0
@@ -115,9 +119,12 @@ def test_batch_diff_uses_filenames_as_default_labels(tmp_path: Path) -> None:
         app,
         [
             "batch-diff",
-            "--before", str(before),
-            "--after", str(after),
-            "--out", str(out_md),
+            "--before",
+            str(before),
+            "--after",
+            str(after),
+            "--out",
+            str(out_md),
         ],
     )
     assert result.exit_code == 0, result.stdout + result.stderr

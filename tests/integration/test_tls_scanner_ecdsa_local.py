@@ -33,9 +33,7 @@ def _generate_self_signed_ecdsa(out_dir: Path) -> tuple[Path, Path]:
     from cryptography.x509.oid import NameOID
 
     key = ec.generate_private_key(ec.SECP256R1())
-    subject = issuer = x509.Name(
-        [x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")]
-    )
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
     san = x509.SubjectAlternativeName(
         [
             x509.DNSName("localhost"),
@@ -67,9 +65,7 @@ def _generate_self_signed_ecdsa(out_dir: Path) -> tuple[Path, Path]:
     return key_path, cert_path
 
 
-def _serve_one_handshake(
-    cert_path: Path, key_path: Path
-) -> tuple[str, int, threading.Event]:
+def _serve_one_handshake(cert_path: Path, key_path: Path) -> tuple[str, int, threading.Event]:
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
 
