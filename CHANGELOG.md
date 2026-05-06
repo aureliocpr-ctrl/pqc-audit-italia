@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 6 — `pqc-audit batch`** (2026-05-06): nuovo subcomando
+  per scan multi-host in unica esecuzione.
+  - Input mutex `--targets` inline (comma-separated `host[:port]`)
+    oppure `--csv` (header opzionale, BOM UTF-8 di Excel ingerito
+    via `utf-8-sig`).
+  - Output aggregato `batch_report.md` (sintesi italiana) +
+    `batch_report.json` (lista di report per-host completi).
+  - `--enforce` propaga la valutazione policy a ogni host.
+  - `--concurrency / -j N` (1..32) cap di scan paralleli via
+    `asyncio.gather` + `asyncio.Semaphore`. Default 1 sequenziale
+    backward-compatible.
+  - `--fail-on-violations` exit code 3 se almeno un host ha verdict
+    FAIL o errore — CI/CD gate, artefatti scritti comunque.
+  - `examples/ci_cd/` — workflow drop-in per GitHub Actions e
+    GitLab CI con pattern weekly cron + per-PR gate + artefact
+    upload + PR comment.
+  - Pure-helper layer in `pqc_audit.batch` (`Target`,
+    `parse_csv`, `parse_inline_targets`, `run_one`, `summarize_one`,
+    `render_markdown`, `run_batch`) testato senza il typer runner.
+  - 20 unit test nuovi: parsing CSV/inline, BOM handling,
+    summarising, rendering Markdown, CliRunner end-to-end con stub
+    `run_one`, fail-on-violations nei due rami, concurrency
+    in-flight cap.
+
 - **Phase 0** — repository scaffold, `pyproject.toml` (hatch backend, py3.11+),
   AGPL-3.0 LICENSE, bilingual README (EN + IT), CONTRIBUTING with CLA,
   CODE_OF_CONDUCT (Contributor Covenant 2.1), SECURITY responsible disclosure
