@@ -263,6 +263,35 @@ def test_batch_csv_input(tmp_path: Path) -> None:
     assert (out / "batch_report.json").exists()
 
 
+def test_batch_emits_html_report(tmp_path: Path) -> None:
+    """The HTML reporter must run alongside Markdown + JSON.
+
+    The CSS / JS goes inline into the same file so the deliverable is
+    one self-contained ``.html`` attachment. The unit test for the
+    pure renderer covers shape and security; here we just verify
+    that the CLI actually wires it in.
+    """
+    out = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        [
+            "batch",
+            "--targets", "127.0.0.1:1",
+            "--policy", "nist_baseline",
+            "--out", str(out),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout + result.stderr
+    assert (out / "batch_report.html").exists()
+    html = (out / "batch_report.html").read_text(encoding="utf-8")
+    assert "<!doctype html>" in html
+    assert "Batch PQC audit" in html
+    # The host appears in the rendered table.
+    assert "127.0.0.1" in html
+    # The CLI tells the user about the new file.
+    assert "batch_report.html" in result.stdout
+
+
 def test_batch_requires_at_least_one_source(tmp_path: Path) -> None:
     """Calling batch with neither --targets nor --csv must fail."""
     result = runner.invoke(app, ["batch", "--out", str(tmp_path / "out")])

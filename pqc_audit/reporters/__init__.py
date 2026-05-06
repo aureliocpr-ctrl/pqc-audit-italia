@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pqc_audit.reporters import (
     cbom_reporter,
+    html_batch_reporter,
     json_reporter,
     markdown_reporter,
     pdf_reporter,
@@ -12,6 +13,7 @@ from pqc_audit.reporters import (
 
 __all__ = [
     "cbom_reporter",
+    "html_batch_reporter",
     "json_reporter",
     "markdown_reporter",
     "pdf_reporter",

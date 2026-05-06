@@ -374,8 +374,16 @@ def batch_cmd(
             concurrency=concurrency,
         )
     )
+    from pqc_audit.reporters.html_batch_reporter import render as render_html_batch
+
     rows = [summarize_one(t.host, r) for t, r in pairs]
     md = render_markdown(
+        rows,
+        policy=policy,
+        sensitivity=data_sensitivity_years,
+        enforce=enforce,
+    )
+    html = render_html_batch(
         rows,
         policy=policy,
         sensitivity=data_sensitivity_years,
@@ -386,8 +394,10 @@ def batch_cmd(
         _json.dumps([r for _, r in pairs], indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+    (out_path / "batch_report.html").write_text(html, encoding="utf-8")
     typer.echo(f"wrote {out_path / 'batch_report.md'}")
     typer.echo(f"wrote {out_path / 'batch_report.json'}")
+    typer.echo(f"wrote {out_path / 'batch_report.html'}")
 
     if fail_on_violations:
         # Trip the CI gate when ANY row reports an error or a FAIL verdict.
