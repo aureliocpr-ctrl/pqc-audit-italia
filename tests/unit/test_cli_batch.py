@@ -108,6 +108,36 @@ def test_summarize_error_path() -> None:
     assert "TimeoutError" in row["error"]
 
 
+def test_summarize_inner_scanner_errors_not_silently_pass() -> None:
+    """If the auditor returned a report with 0 assets and at least
+    one ``scan_results[0].errors`` entry, the host is unreachable —
+    NOT compliant. The summary row must NOT report ``status=ok`` and
+    ``policy_verdict=PASS``: that would be a *false green*, exactly the
+    failure mode the live 30-host PA scan revealed (Banca d'Italia,
+    salute.gov.it, etc.).
+    """
+    inner_err_report = {
+        "metadata": {"target_host": "bancaditalia.it", "risk_summary": {}},
+        "scan_results": [
+            {
+                "target": "bancaditalia.it:443",
+                "assets": [],
+                "vulnerabilities": [],
+                "errors": ["gaierror: [Errno 11001] getaddrinfo failed"],
+            }
+        ],
+        "policy_evaluation": {"overall_verdict": "PASS", "violations": []},
+        "recommendations": [],
+    }
+    row = batch_mod.summarize_one("bancaditalia.it", inner_err_report)
+    assert row["status"] == "error", (
+        "expected status=error when scan_results carry inner errors; "
+        f"got status={row.get('status')} verdict={row.get('policy_verdict')} — "
+        "this is the FALSE-GREEN bug the live PA scan exposed."
+    )
+    assert "gaierror" in row.get("error", "") or "getaddrinfo" in row.get("error", "")
+
+
 def test_render_markdown_includes_header_and_table() -> None:
     rows = [
         {

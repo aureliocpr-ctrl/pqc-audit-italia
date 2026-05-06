@@ -141,15 +141,37 @@ async def run_one(
 
 
 def summarize_one(host: str, report: dict[str, Any]) -> dict[str, Any]:
-    """Distill a single AuditReport (as dict) into one summary row."""
+    """Distill a single AuditReport (as dict) into one summary row.
+
+    Two failure modes produce ``status="error"``:
+
+    1. Top-level error stub from ``run_one`` (transport refused before
+       any TLS handshake — DNS resolve failed, connection refused).
+    2. Inner ``scan_results[0].errors`` non-empty AND ``assets``
+       empty: the auditor produced a structured report but the scanner
+       couldn't extract any cert from the target. We refuse to call
+       this "ok" because the policy evaluation that comes back is
+       vacuously ``PASS`` (no asset = no violation), which would
+       become a *false green* in the executive table.
+    """
     if "error" in report:
         return {
             "host": host,
             "status": "error",
             "error": report["error"],
         }
-    sr = (report.get("scan_results") or [{}])[0]
+    sr_list = report.get("scan_results") or []
+    sr = sr_list[0] if sr_list else {}
     assets = sr.get("assets") or []
+    inner_errors = sr.get("errors") or []
+    if not assets and inner_errors:
+        # Inner-scanner failure → surface as error so the row doesn't
+        # carry a misleading ``policy_verdict=PASS`` next to no data.
+        return {
+            "host": host,
+            "status": "error",
+            "error": str(inner_errors[0]),
+        }
     vulns = sr.get("vulnerabilities") or []
     risk = (report.get("metadata") or {}).get("risk_summary") or {}
     pe = report.get("policy_evaluation") or {}
