@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (DX & supply-chain hardening — 2026-05-06)
+
+- **Makefile** con target `make test`, `make gates`, `make build`,
+  `make publish-test`, `make publish`, `make clean`. Investor /
+  contributor possono riprodurre la due-diligence in un comando.
+- **`.pre-commit-config.yaml`**: hook locale (ruff, ruff-format,
+  mypy strict, bandit, pytest unit) per ergonomia commit
+  quotidiana. Install: `pip install pre-commit && pre-commit install`.
+- **`examples/bench/`**: benchmark performance reproducibile (
+  bench_run.py + pa_30hosts.csv + README + .gitignore). Sweet spot
+  concurrency=8, 1.5× speedup vs sequential, plateau ~3.3 host/sec.
+- **`examples/customer_scenarios.md`**: 3 use case eseguibili
+  (PMI single-domain, PA multi-host con trend mensile, banca con
+  GitHub Code Scanning + DORA gate).
+- **`test_cli_signature_lock_in.py`**: 8 test parametrizzati che
+  pinnano i nomi delle opzioni CLI per ogni subcomando. Una rinomina
+  silenziosa (`--targets` → `--target`) fa fallire il commit.
+- **`CITATION.cff`**: riferimento accademico/regolatorio (Citation
+  File Format).
+- **`.github/FUNDING.yml`**: placeholder per future sponsor button
+  (commentato finché non c'è canale pubblico).
+- **`.github/dependabot.yml`**: weekly auto-update Python + GitHub
+  Actions con grouping per minor/patch.
+- **`.editorconfig`**: coerenza cross-editor.
+
 ## [0.2.0] - 2026-05-06
 
 ### Added
