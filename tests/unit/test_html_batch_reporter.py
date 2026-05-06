@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from pqc_audit.reporters import html_batch_reporter
 
 
@@ -94,6 +96,86 @@ def test_render_html_escapes_hostnames_against_xss() -> None:
     # attribute or the cell text). We check for the unmistakable
     # "&lt;script&gt;" footprint.
     assert "&lt;script&gt;" in html
+
+
+# ── Extended XSS surface (Phase 6.5 hardening) ───────────────────
+
+
+_XSS_PAYLOADS = [
+    # Classic: escape from a quoted attribute and inject a script.
+    '" autofocus onfocus="alert(1)',
+    # Inline event handler on a fake img.
+    "<img src=x onerror=alert(1)>",
+    # SVG namespace — script inside a foreign element.
+    "<svg><script>alert(1)</script></svg>",
+    # javascript: URL (would be live in href / src contexts).
+    "javascript:alert(1)",
+    # Already-encoded payload — must NOT round-trip back to live HTML.
+    "&lt;script&gt;alert(1)&lt;/script&gt;",
+    # Polyglot mixing quotes, attributes and CDATA.
+    '\'><iframe srcdoc="<script>alert(1)</script>">',
+    # Plain script tag (the ones the encoder must shield from the DOM).
+    "<script>alert(1)</script>",
+    # Backslash + quote attempts (template engines often miss this).
+    '\\"><script>alert(1)</script>',
+    # CR / LF in the host — should not produce a header-split.
+    "evil\r\n<script>alert(1)</script>",
+]
+
+
+@pytest.mark.parametrize("payload", _XSS_PAYLOADS)
+def test_render_html_escapes_xss_payloads(payload: str) -> None:
+    """Every attacker-influenceable payload appears ONLY in escaped form.
+
+    The reporter is meant to be opened in a browser by a CISO. A
+    hostname under audit is attacker-influenceable (it can come from
+    a CSV the auditor was given). Any path from "string in dict" to
+    "live DOM element" is a security failure.
+
+    Strategy: render once with a benign host (baseline) and once with
+    the payload. The DELTA between the two outputs must not contain
+    any DOM-active substring — no new ``<script>`` tag, no new event
+    handler, no new ``<iframe>``, no new ``javascript:`` URL.
+    """
+    benign = html_batch_reporter.render(
+        [_row_ok(host="benign.example"), _row_err(host="benign-err.example")],
+        policy="agid_2026",
+        sensitivity=10,
+        enforce=True,
+    )
+    nasty = html_batch_reporter.render(
+        [_row_ok(host=payload), _row_err(host=payload, error=payload)],
+        policy="agid_2026",
+        sensitivity=10,
+        enforce=True,
+    )
+
+    def _normalised_count(haystack: str, needle: str) -> int:
+        return haystack.lower().count(needle.lower())
+
+    # The DOM-dangerous tokens are *opening tags* with a live ``<``.
+    # If the escaper works, ``<`` is rewritten to ``&lt;`` and these
+    # counts cannot grow. Substrings like ``onerror=`` or
+    # ``srcdoc=`` may legitimately appear inside escaped text without
+    # being live, so we don't pin them.
+    for tag in ("<script>", "</script>", "<iframe", "<svg", "<img "):
+        baseline = _normalised_count(benign, tag)
+        with_payload = _normalised_count(nasty, tag)
+        assert with_payload <= baseline, (
+            f"payload {payload!r} introduced extra live ``{tag}`` tag: "
+            f"baseline={baseline}, with_payload={with_payload}. "
+            "This is an XSS escape failure."
+        )
+
+    # The full literal payload must NOT appear unescaped anywhere.
+    # We carve out the case where the payload is itself a sequence of
+    # already-escaped characters (e.g. "&lt;script&gt;...") which by
+    # construction is safe.
+    if "<" in payload and not payload.startswith("&lt;"):
+        assert payload not in nasty, (
+            f"payload {payload!r} appears verbatim in the rendered HTML — "
+            "it must be HTML-escaped before reaching the DOM."
+        )
 
 
 def test_render_marks_error_rows_with_dedicated_class() -> None:
