@@ -1,0 +1,50 @@
+cff-version: 1.2.0
+message: "If you use pqc-audit-italia in academic, regulatory, or audit work, please cite as below."
+authors:
+  - family-names: "Capriello"
+    given-names: "Aurelio"
+    email: "aurelio@omnexcyber.com"
+    country: IT
+title: "pqc-audit-italia: Crypto-discovery and crypto-agility audit toolkit for the Italian market"
+version: "0.2.0"
+date-released: "2026-05-06"
+url: "https://github.com/aureliocpr/pqc-audit-italia"
+license: AGPL-3.0-only
+keywords:
+  - post-quantum-cryptography
+  - PQC
+  - FIPS-203
+  - FIPS-204
+  - FIPS-205
+  - ML-KEM
+  - ML-DSA
+  - SLH-DSA
+  - HNDL
+  - quantum-readiness
+  - NIS2
+  - DORA
+  - AgID
+  - CBOM
+  - cyclonedx
+  - SARIF
+  - audit
+  - pubblica-amministrazione
+  - banca-italia
+abstract: >
+  pqc-audit-italia is an open-source scanner that identifies where
+  an organization uses cryptography today, how exposed it is to HNDL
+  (Harvest Now, Decrypt Later) and Q-Day, and how to plan migration
+  toward NIST PQC standards (FIPS 203 / 204 / 205). It targets the
+  Italian regulatory landscape (NIS2 D.Lgs. 138/2024, DORA Reg. (EU)
+  2022/2554, AgID guidelines, Banca d'Italia circulars) with
+  compliance-ready reports in Italian and English, plus four bundled
+  policies (agid_2026, pa_critical_2027, banking_italy, nist_baseline).
+preferred-citation:
+  type: software
+  authors:
+    - family-names: "Capriello"
+      given-names: "Aurelio"
+  title: "pqc-audit-italia"
+  version: "0.2.0"
+  year: 2026
+  url: "https://github.com/aureliocpr/pqc-audit-italia"
