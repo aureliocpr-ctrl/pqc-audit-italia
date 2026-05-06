@@ -266,5 +266,107 @@ def cbom_cmd(
         typer.echo(text)
 
 
+@app.command("batch")
+def batch_cmd(
+    targets: str | None = typer.Option(
+        None,
+        "--targets",
+        help='Comma-separated host[:port] list, e.g. "a.example,b.example:8443".',
+    ),
+    csv_path: str | None = typer.Option(
+        None,
+        "--csv",
+        help="CSV file with one host per row (host[,port[,scope]]).",
+    ),
+    policy: str = typer.Option(
+        "agid_2026",
+        "--policy",
+        help="Audit policy name applied to every target.",
+    ),
+    data_sensitivity_years: int = typer.Option(
+        15,
+        "--data-sensitivity-years",
+        help="HNDL sensitivity window in years (default: 15).",
+    ),
+    enforce: bool = typer.Option(
+        False,
+        "--enforce",
+        help="Embed policy_evaluation in each per-host report.",
+    ),
+    out_dir: str = typer.Option(
+        ...,
+        "--out",
+        "-o",
+        help="Output directory (created if missing).",
+    ),
+) -> None:
+    """Run a TLS PQC audit across many hosts in one shot.
+
+    Emits two files in ``--out``:
+
+    - ``batch_report.md``   — Italian executive summary table
+    - ``batch_report.json`` — list of full per-host audit dicts
+    """
+    import asyncio
+    import json as _json
+
+    from pqc_audit.batch import (
+        parse_csv,
+        parse_inline_targets,
+        render_markdown,
+        run_batch,
+        summarize_one,
+    )
+
+    if not targets and not csv_path:
+        typer.echo(
+            "error: either --targets or --csv is required.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if targets and csv_path:
+        typer.echo(
+            "error: --targets and --csv are mutually exclusive.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if targets:
+        target_list = parse_inline_targets(targets)
+    else:
+        assert csv_path is not None
+        target_list = parse_csv(Path(csv_path))
+
+    if not target_list:
+        typer.echo("error: no targets parsed from input.", err=True)
+        raise typer.Exit(code=2)
+
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    pairs = asyncio.run(
+        run_batch(
+            target_list,
+            policy=policy,
+            sensitivity=data_sensitivity_years,
+            enforce=enforce,
+        )
+    )
+    rows = [summarize_one(t.host, r) for t, r in pairs]
+    md = render_markdown(
+        rows,
+        policy=policy,
+        sensitivity=data_sensitivity_years,
+        enforce=enforce,
+    )
+    (out_path / "batch_report.md").write_text(md, encoding="utf-8")
+    (out_path / "batch_report.json").write_text(
+        _json.dumps([r for _, r in pairs], indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    typer.echo(f"wrote {out_path / 'batch_report.md'}")
+    typer.echo(f"wrote {out_path / 'batch_report.json'}")
+
+
 if __name__ == "__main__":
     app()
