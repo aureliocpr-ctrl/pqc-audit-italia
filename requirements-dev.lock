@@ -1,0 +1,28 @@
+# Requirements snapshot per riproducibility dell'ambiente di
+# sviluppo. Versioni esatte usate al 2026-05-06 per:
+#
+# - eseguire ``make gates`` con risultati identici
+# - bisecting commit storici (pip install -r per checkout passato)
+# - debugging "funziona da me ma non in CI"
+#
+# Aggiornare via:
+#   pip install -e ".[dev]"
+#   pip freeze | grep -E "ruff|mypy|bandit|pytest|pydantic|cryptography|typer|httpx|structlog|pyyaml|rich" > requirements-dev.lock
+
+bandit==1.9.4
+cryptography==45.0.7
+httpx==0.28.1
+mypy==1.20.1
+mypy_extensions==1.1.0
+pydantic==2.12.5
+pydantic_core==2.41.5
+pytest==9.0.2
+pytest-asyncio==1.3.0
+pytest-cov==7.1.0
+PyYAML==6.0.3
+respx==0.23.1
+rich==14.2.0
+ruff==0.15.10
+structlog==25.5.0
+typer==0.20.0
+types-PyYAML==6.0.12.20251020
