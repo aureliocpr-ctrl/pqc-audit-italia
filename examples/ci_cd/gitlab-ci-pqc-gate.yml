@@ -1,0 +1,58 @@
+# Example GitLab CI/CD job: weekly PQC audit + per-MR gate.
+#
+# Add to your `.gitlab-ci.yml` (or include via GitLab CI/CD components).
+#
+# Behaviour:
+#   - Runs `pqc-audit batch` against your TLS endpoint inventory.
+#   - `--fail-on-violations` → exit 3 → job fails → MR blocked.
+#   - The Markdown + JSON report is published as a CI artefact, so
+#     reviewers can read it even when the gate trips.
+#   - Scheduled weekly + on every MR that touches infra paths.
+#
+# To make this a reusable component drop the file at the path
+# `templates/PQC-Gate.gitlab-ci.yml` of a CI/CD components project,
+# then `include: { component: ".../PQC-Gate@1.0" }` in consumers.
+
+stages:
+  - audit
+
+pqc:gate:
+  stage: audit
+  image: python:3.11-slim
+  rules:
+    # Run weekly via pipeline schedule (configured in the UI):
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    # Run on MR when infra paths change:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - infra/**/*
+        - deploy/**/*
+        - .gitlab-ci.yml
+    # Allow manual trigger from any branch:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+  before_script:
+    - pip install --quiet --no-cache-dir --upgrade pip
+    - pip install --quiet --no-cache-dir pqc-audit-italia
+  script:
+    - mkdir -p artefacts/pqc
+    - >
+      pqc-audit batch
+      --csv infra/pqc/targets.csv
+      --policy agid_2026
+      --data-sensitivity-years 30
+      --concurrency 8
+      --enforce
+      --fail-on-violations
+      --out artefacts/pqc/
+  artifacts:
+    name: "pqc-audit-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+    when: always   # publish even on gate failure
+    expire_in: 30 days
+    paths:
+      - artefacts/pqc/
+    reports:
+      # SARIF would be optional here — the per-host JSON includes
+      # severity but not native SARIF. Use scripts/json2sarif if you
+      # want to feed GitLab's vulnerability dashboard.
+  timeout: 15m

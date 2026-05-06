@@ -1,0 +1,87 @@
+# Example GitHub Actions workflow: weekly PQC audit + per-PR gate.
+#
+# Drop this file into your repo at:
+#   .github/workflows/pqc-gate.yml
+#
+# What it does
+# ------------
+# - Runs the `pqc-audit batch` over a CSV of TLS endpoints you own
+#   (e.g. your customer-facing perimeter).
+# - Uses `--fail-on-violations` so the workflow fails (exit 3) when
+#   ANY host has a policy verdict of FAIL — useful as a release gate
+#   or scheduled regression check.
+# - Uploads the Markdown + JSON report as a workflow artifact so
+#   it can be reviewed even when the gate trips.
+#
+# Triggers
+# --------
+# - Weekly (Monday 06:00 UTC) — long-running monitoring.
+# - On every PR that touches the TLS / web perimeter so a regression
+#   on the public crypto posture is caught before merge.
+
+name: pqc-gate
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  pull_request:
+    paths:
+      - "infra/**"
+      - "deploy/**"
+      - ".github/workflows/pqc-gate.yml"
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pqc-audit-italia
+        run: |
+          python -m pip install --upgrade pip
+          # Pin a release tag in production; for the example we install
+          # straight from the public source tree.
+          pip install pqc-audit-italia
+
+      - name: Run weekly batch scan
+        # Path your CSV: host[,port[,scope]] one per row, header optional.
+        # Example below assumes infra/pqc/targets.csv lives in the repo.
+        run: |
+          mkdir -p artefacts/pqc
+          pqc-audit batch \
+            --csv infra/pqc/targets.csv \
+            --policy agid_2026 \
+            --data-sensitivity-years 30 \
+            --concurrency 8 \
+            --enforce \
+            --fail-on-violations \
+            --out artefacts/pqc/
+
+      - name: Upload PQC report (always — even on gate failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pqc-audit-report
+          path: artefacts/pqc/
+
+      # Optional: post the markdown summary as a PR comment
+      - name: Comment PR with summary
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const md = fs.readFileSync('artefacts/pqc/batch_report.md', 'utf8');
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: "## PQC audit report\n\n" + md.slice(0, 60_000),
+            });
