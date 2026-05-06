@@ -116,6 +116,15 @@ pqc-audit batch --csv targets.csv \
                 --enforce \
                 --out artefacts/
 
+# Parallel scan (8 in flight) for large portfolios
+pqc-audit batch --csv 200_hosts.csv -j 8 --policy agid_2026 \
+                --enforce --out artefacts/
+
+# CI/CD gate: exit code 3 if any host fails the policy
+pqc-audit batch --csv targets.csv --policy pa_critical \
+                --enforce --fail-on-violations --out artefacts/
+# exit 0 → green / exit 3 → block PR / report still written
+
 # Output:
 #   artefacts/batch_report.md    — italian executive summary
 #   artefacts/batch_report.json  — list of full per-host reports
