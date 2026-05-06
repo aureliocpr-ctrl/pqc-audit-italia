@@ -142,6 +142,64 @@ SARIF 2.1.0 viene importato nativamente dalla pagina "Security &
 Compliance" di GitLab, e da GitHub Code Scanning. Le findings
 diventano bloccanti se il policy_evaluation è FAIL.
 
+## Caso d'uso 6 — Snapshot mensile dell'intero perimetro PA
+
+Il subcomando `pqc-audit batch` esegue lo scan TLS su una lista
+intera di host in un'unica esecuzione e produce un report
+aggregato Markdown + JSON. È pensato per due scenari concreti:
+
+1. **Snapshot periodico** del parco TLS di una PA (Regioni,
+   ministeri, enti vigilati, fornitori) per tracciare l'adozione
+   PQC nel tempo.
+2. **Pre-gara CONSIP/Sogei**: il fornitore consegna in 2 minuti
+   uno snapshot crittografico di TUTTO il perimetro digitale
+   del cliente, già scritto in italiano e firmato.
+
+```bash
+# Lista CSV: host[,port[,scope]] — header opzionale, BOM Excel ok
+$ cat parco_PA.csv
+www.agid.gov.it,443,agid.gov.it
+www.governo.it,443,governo.it
+www.inps.it,443,inps.it
+www.regione.lombardia.it,443,lombardia.it
+www.consip.it,443,consip.it
+
+# Scan parallelo (8 host alla volta) con enforcement della policy
+$ pqc-audit batch \
+    --csv parco_PA.csv \
+    --policy agid_2026 \
+    --data-sensitivity-years 30 \
+    --concurrency 8 \
+    --enforce \
+    --out artefatti/snapshot_2026_05/
+
+wrote artefatti/snapshot_2026_05/batch_report.md
+wrote artefatti/snapshot_2026_05/batch_report.json
+```
+
+Il file `batch_report.md` è già pronto per essere consegnato al
+cliente: header esecutivo italiano, tabella per host con
+algoritmo TLS, HNDL, Q-Day, verdict policy e top
+raccomandazione, nota di chiusura "P5 uniforme" se nessun host
+negozia PQC.
+
+Per usarlo come **gate di compliance in CI/CD** aggiungere
+`--fail-on-violations`: il comando esce con codice 3 se almeno
+un host fallisce la policy, bloccando il MR / PR finché la
+crittografia non è AgID-compliant.
+
+```bash
+$ pqc-audit batch --csv parco_PA.csv \
+                  --policy pa_critical \
+                  --enforce --fail-on-violations \
+                  --out artefatti/
+# exit 0 → green / exit 3 → block PR / artefatti scritti comunque
+```
+
+I template pronti per GitHub Actions e GitLab CI sono in
+`examples/ci_cd/` del repository — basta copia-incolla del file
+nel proprio `.github/workflows/` o `.gitlab-ci.yml`.
+
 ## Tre cose da sapere subito
 
 ### 1. Il default è prudente
