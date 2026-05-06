@@ -5,7 +5,11 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Status: Beta](https://img.shields.io/badge/status-beta-yellow)](#roadmap)
-[![Tests: 187 green](https://img.shields.io/badge/tests-189%20green-success)](#development)
+[![Tests: 250 green](https://img.shields.io/badge/tests-250%20green-success)](#development)
+[![Coverage 90%](https://img.shields.io/badge/coverage-90%25-success)](#development)
+[![Ruff zero](https://img.shields.io/badge/ruff-zero-success)](#development)
+[![Mypy strict](https://img.shields.io/badge/mypy-strict-success)](#development)
+[![Bandit zero](https://img.shields.io/badge/bandit-zero-success)](#development)
 
 **Italiano:** see [README.it.md](README.it.md).
 
@@ -38,6 +42,10 @@ It targets the Italian regulatory landscape (NIS2 D.Lgs. 138/2024, DORA Reg. (EU
 | SARIF 2.1.0 reporter | Ready | GitHub code scanning, GitLab SAST |
 | CBOM CycloneDX 1.6 reporter | Ready | Emerging standard for crypto BOM |
 | PDF reporter | Ready | WeasyPrint-backed (optional) |
+| **HTML batch reporter** | **Ready (0.2.0)** | **Self-contained HTML, inline CSS+JS, host filter, CSV export — e-mail-friendly** |
+| **Batch portfolio scan** | **Ready (0.2.0)** | **`pqc-audit batch` — CSV / inline targets, concurrency, CI gate `--fail-on-violations`** |
+| **Snapshot diff** | **Ready (0.2.0)** | **`pqc-audit batch-diff` — improved / regressed / unchanged / added / removed** |
+| **Expired-cert detection** | **Ready (0.2.0)** | **CWE-298: HIGH severity flag for ``not_valid_after < now()``** |
 | Compliance mapping | Ready | NIS2 art. 21, DORA art. 9, AgID Linee Guida, ISO 27001 A.10 |
 
 ### Bundled policies
