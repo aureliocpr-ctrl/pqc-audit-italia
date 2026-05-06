@@ -414,5 +414,76 @@ def batch_cmd(
             raise typer.Exit(code=3)
 
 
+@app.command("batch-diff")
+def batch_diff_cmd(
+    before: str = typer.Option(
+        ...,
+        "--before",
+        help="Previous batch_report.json snapshot (the older one).",
+    ),
+    after: str = typer.Option(
+        ...,
+        "--after",
+        help="Current batch_report.json snapshot (the newer one).",
+    ),
+    out: str = typer.Option(
+        ...,
+        "--out",
+        "-o",
+        help="Destination Markdown file for the delta report.",
+    ),
+    before_label: str | None = typer.Option(
+        None,
+        "--before-label",
+        help="Label for the BEFORE snapshot (default: filename stem).",
+    ),
+    after_label: str | None = typer.Option(
+        None,
+        "--after-label",
+        help="Label for the AFTER snapshot (default: filename stem).",
+    ),
+) -> None:
+    """Compare two ``batch_report.json`` snapshots and emit a delta report.
+
+    Use case: re-run the same ``pqc-audit batch`` every month, save
+    the resulting JSON, and feed two of those into this command to
+    surface adoption trends — what improved, what regressed, what
+    hosts entered or left the portfolio.
+    """
+    import json as _json
+
+    from pqc_audit.batch_diff import compare_batches, render_diff_markdown
+
+    before_path = Path(before)
+    after_path = Path(after)
+    if not before_path.is_file():
+        typer.echo(f"error: --before file not found: {before_path}", err=True)
+        raise typer.Exit(code=2)
+    if not after_path.is_file():
+        typer.echo(f"error: --after file not found: {after_path}", err=True)
+        raise typer.Exit(code=2)
+
+    prev = _json.loads(before_path.read_text(encoding="utf-8"))
+    curr = _json.loads(after_path.read_text(encoding="utf-8"))
+    if not isinstance(prev, list) or not isinstance(curr, list):
+        typer.echo(
+            "error: each input must be a JSON list (output of `pqc-audit batch`).",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    diff = compare_batches(prev, curr)
+    md = render_diff_markdown(
+        diff,
+        before_label=before_label or before_path.stem,
+        after_label=after_label or after_path.stem,
+    )
+
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(md, encoding="utf-8")
+    typer.echo(f"wrote {out_path}")
+
+
 if __name__ == "__main__":
     app()
