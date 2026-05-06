@@ -17,8 +17,19 @@ from pathlib import Path
 import typer
 
 from pqc_audit import Auditor, ScanTarget, __version__
+from pqc_audit.batch import (
+    parse_csv,
+    parse_inline_targets,
+    run_batch,
+    summarize_one,
+)
+from pqc_audit.batch import (
+    render_markdown as render_batch_markdown,
+)
+from pqc_audit.batch_diff import compare_batches, render_diff_markdown
 from pqc_audit.core.models import AuditReport, RiskLevel
 from pqc_audit.reporters.cbom_reporter import render as render_cbom
+from pqc_audit.reporters.html_batch_reporter import render as render_html_batch
 from pqc_audit.reporters.json_reporter import render as render_json
 from pqc_audit.reporters.markdown_reporter import render as render_markdown
 from pqc_audit.reporters.pdf_reporter import render as render_pdf
@@ -328,17 +339,6 @@ def batch_cmd(
     - ``batch_report.md``   — Italian executive summary table
     - ``batch_report.json`` — list of full per-host audit dicts
     """
-    import asyncio
-    import json as _json
-
-    from pqc_audit.batch import (
-        parse_csv,
-        parse_inline_targets,
-        render_markdown,
-        run_batch,
-        summarize_one,
-    )
-
     if not targets and not csv_path:
         typer.echo(
             "error: either --targets or --csv is required.",
@@ -374,10 +374,8 @@ def batch_cmd(
             concurrency=concurrency,
         )
     )
-    from pqc_audit.reporters.html_batch_reporter import render as render_html_batch
-
     rows = [summarize_one(t.host, r) for t, r in pairs]
-    md = render_markdown(
+    md = render_batch_markdown(
         rows,
         policy=policy,
         sensitivity=data_sensitivity_years,
@@ -391,7 +389,7 @@ def batch_cmd(
     )
     (out_path / "batch_report.md").write_text(md, encoding="utf-8")
     (out_path / "batch_report.json").write_text(
-        _json.dumps([r for _, r in pairs], indent=2, ensure_ascii=False),
+        json.dumps([r for _, r in pairs], indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
     (out_path / "batch_report.html").write_text(html, encoding="utf-8")
@@ -450,10 +448,6 @@ def batch_diff_cmd(
     surface adoption trends — what improved, what regressed, what
     hosts entered or left the portfolio.
     """
-    import json as _json
-
-    from pqc_audit.batch_diff import compare_batches, render_diff_markdown
-
     before_path = Path(before)
     after_path = Path(after)
     if not before_path.is_file():
@@ -463,8 +457,8 @@ def batch_diff_cmd(
         typer.echo(f"error: --after file not found: {after_path}", err=True)
         raise typer.Exit(code=2)
 
-    prev = _json.loads(before_path.read_text(encoding="utf-8"))
-    curr = _json.loads(after_path.read_text(encoding="utf-8"))
+    prev = json.loads(before_path.read_text(encoding="utf-8"))
+    curr = json.loads(after_path.read_text(encoding="utf-8"))
     if not isinstance(prev, list) or not isinstance(curr, list):
         typer.echo(
             "error: each input must be a JSON list (output of `pqc-audit batch`).",

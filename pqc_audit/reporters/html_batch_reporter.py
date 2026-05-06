@@ -29,6 +29,11 @@ from typing import Any
 
 from pqc_audit import __version__
 
+# Above this HNDL score, the row is treated as "critical" and
+# carries the ``hndl-high`` CSS class so the auditor's eye finds
+# the bad rows without reading the column.
+_HNDL_HIGH_THRESHOLD = 80
+
 # Inline CSS — kept short on purpose. The page must render legibly
 # even without JS (filter just won't work).
 _CSS = """
@@ -193,7 +198,7 @@ def render(
     high = sum(
         1
         for r in rows
-        if r.get("status") == "ok" and (r.get("hndl") or 0) >= 80
+        if r.get("status") == "ok" and (r.get("hndl") or 0) >= _HNDL_HIGH_THRESHOLD
     )
     pqc_present = sum(
         1
@@ -223,7 +228,7 @@ def render(
             top_reco = escape(str(r.get("top_reco", "—")))
             v_class = _verdict_class(verdict)
             row_classes = []
-            if isinstance(hndl, (int, float)) and hndl >= 80:
+            if isinstance(hndl, (int, float)) and hndl >= _HNDL_HIGH_THRESHOLD:
                 row_classes.append("hndl-high")
             cls_attr = f' class="{" ".join(row_classes)}"' if row_classes else ""
             body_rows.append(

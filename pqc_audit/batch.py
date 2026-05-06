@@ -25,14 +25,23 @@ dot-separated tokens).
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from pqc_audit import Auditor, ScanTarget
+
+# Magic-value constants — extracted so PLR2004 stays clean and the
+# numbers carry semantics, not just bare integers in expressions.
+_ETLD_MIN_PARTS = 2  # eTLD+1 fallback needs ≥2 dot-separated tokens.
+_CSV_COL_PORT = 1  # CSV column index where ``port`` appears (if present).
+_CSV_COL_SCOPE = 2  # CSV column index where ``scope`` appears (if present).
+_HNDL_HIGH_THRESHOLD = 80  # HNDL ≥ this is treated as a "critical" row.
 
 
 @dataclass(frozen=True)
@@ -48,8 +57,8 @@ class Target:
         if self.scope:
             return self.scope
         parts = [p for p in self.host.split(".") if p]
-        if len(parts) >= 2:
-            return ".".join(parts[-2:])
+        if len(parts) >= _ETLD_MIN_PARTS:
+            return ".".join(parts[-_ETLD_MIN_PARTS:])
         return self.host
 
 
@@ -91,8 +100,12 @@ def parse_csv(path: Path) -> list[Target]:
             if cells[0].lower() in {"host", "hostname", "domain"}:
                 continue
             host = cells[0]
-            port = int(cells[1]) if len(cells) > 1 and cells[1] else 443
-            scope = cells[2] if len(cells) > 2 else ""
+            port = (
+                int(cells[_CSV_COL_PORT])
+                if len(cells) > _CSV_COL_PORT and cells[_CSV_COL_PORT]
+                else 443
+            )
+            scope = cells[_CSV_COL_SCOPE] if len(cells) > _CSV_COL_SCOPE else ""
             out.append(Target(host=host, port=port, scope=scope))
     return out
 
@@ -170,7 +183,7 @@ def render_markdown(
     high = sum(
         1
         for r in rows
-        if r["status"] == "ok" and (r.get("hndl") or 0) >= 80
+        if r["status"] == "ok" and (r.get("hndl") or 0) >= _HNDL_HIGH_THRESHOLD
     )
     pqc_present = sum(
         1
@@ -242,8 +255,6 @@ async def run_batch(
     ``asyncio.Semaphore(N)``. The pairing ``(target, report)``
     is preserved in both modes.
     """
-    import asyncio
-
     # Materialise the iterable once so we can both run the scans
     # and emit deterministic ordering on the output.
     target_list = list(targets)

@@ -29,8 +29,6 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
 from pqc_audit.reporters import html_batch_reporter
 
 

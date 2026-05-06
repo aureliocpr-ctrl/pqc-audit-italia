@@ -362,10 +362,10 @@ def test_batch_fail_on_violations_zero_when_clean() -> None:
     async def _fake_run_one(target, **_kw):
         return dict(pass_payload, host=target.host)
 
-    from pqc_audit import batch as _batch_mod
-
-    import tempfile
     import os
+    import tempfile
+
+    from pqc_audit import batch as _batch_mod
 
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "out")
@@ -388,9 +388,13 @@ def test_batch_fail_on_violations_zero_when_clean() -> None:
             f"expected exit 0 when all hosts PASS; got {result.exit_code}\n"
             f"{result.stdout}"
         )
-        payload = json.loads(open(os.path.join(out, "batch_report.json"), encoding="utf-8").read())
-        assert all(p.get("policy_evaluation", {}).get("overall_verdict") == "PASS"
-                   for p in payload), payload
+        payload = json.loads(
+            (Path(out) / "batch_report.json").read_text(encoding="utf-8")
+        )
+        assert all(
+            p.get("policy_evaluation", {}).get("overall_verdict") == "PASS"
+            for p in payload
+        ), payload
 
 
 def test_batch_empty_csv_exits_nonzero(tmp_path: Path) -> None:

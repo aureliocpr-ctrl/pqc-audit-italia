@@ -13,7 +13,8 @@ engine). The CLI / reporter wiring lives elsewhere.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 # Algorithms the auditor recognises as "PQC-negotiated" for the
 # purpose of trend tracking. Same list the markdown reporter uses

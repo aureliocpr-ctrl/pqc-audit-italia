@@ -23,8 +23,6 @@ module is a pure helper.
 
 from __future__ import annotations
 
-import pytest
-
 from pqc_audit import batch_diff
 
 
