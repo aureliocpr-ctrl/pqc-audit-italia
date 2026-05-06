@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 6.5 — Reporter HTML self-contained** (2026-05-06): il
+  subcomando `pqc-audit batch` emette ora anche `batch_report.html`
+  oltre a `.md` e `.json`. Il file è un singolo documento con CSS+JS
+  inline (no CDN, no font remoti), pensato per essere allegato a
+  un'e-mail al CISO/CFO. Espone una text-input per filtrare la tabella
+  per host e un pulsante "Scarica CSV" per pivot rapido a foglio
+  elettronico. Hostname HTML-escaped (anti-XSS pinned in test).
 - **Phase 6 — `pqc-audit batch`** (2026-05-06): nuovo subcomando
   per scan multi-host in unica esecuzione.
   - Input mutex `--targets` inline (comma-separated `host[:port]`)
