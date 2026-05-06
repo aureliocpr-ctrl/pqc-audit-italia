@@ -94,6 +94,33 @@ pqc-audit report -i scan.json -f cbom  > cbom.cdx.json
 pqc-audit report -i scan.json -f pdf   -o report.pdf
 ```
 
+### Batch scan (many hosts at once)
+
+`pqc-audit batch` scans a portfolio of TLS endpoints in one run
+and emits an aggregated Markdown executive summary plus a JSON
+list of full per-host reports. Useful for periodic snapshots of a
+PA/utility/banking perimeter or as a CI smoke against a stable
+target list.
+
+```bash
+# Inline target list
+pqc-audit batch --targets "www.agid.gov.it,www.governo.it,www.inps.it" \
+                --policy agid_2026 \
+                --data-sensitivity-years 30 \
+                --enforce \
+                --out artefacts/
+
+# CSV input — host[,port[,scope]], header optional, BOM-tolerant
+pqc-audit batch --csv targets.csv \
+                --policy pa_critical_2027 \
+                --enforce \
+                --out artefacts/
+
+# Output:
+#   artefacts/batch_report.md    — italian executive summary
+#   artefacts/batch_report.json  — list of full per-host reports
+```
+
 ### Policy enforcement
 
 ```bash
