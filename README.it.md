@@ -5,7 +5,11 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Status: Beta](https://img.shields.io/badge/status-beta-yellow)](#roadmap)
-[![Tests: 187 verdi](https://img.shields.io/badge/tests-189%20green-success)](#sviluppo)
+[![Tests: 252 verdi](https://img.shields.io/badge/tests-252%20green-success)](#sviluppo)
+[![Coverage 90%](https://img.shields.io/badge/coverage-90%25-success)](#sviluppo)
+[![Ruff zero](https://img.shields.io/badge/ruff-zero-success)](#sviluppo)
+[![Mypy strict](https://img.shields.io/badge/mypy-strict-success)](#sviluppo)
+[![Bandit zero](https://img.shields.io/badge/bandit-zero-success)](#sviluppo)
 
 **English:** vedi [README.md](README.md).
 
