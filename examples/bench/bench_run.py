@@ -48,7 +48,7 @@ def _run_one(concurrency: int, run_idx: int) -> dict[str, float | int]:
         str(out_subdir),
     ]
     t0 = time.monotonic()
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=False)  # noqa: S603 — cmd is hardcoded sys.executable + module path
     elapsed = time.monotonic() - t0
     if proc.returncode != 0:
         sys.exit(f"batch failed (concurrency={concurrency}): {proc.stderr}")
@@ -104,7 +104,7 @@ def main() -> None:
         f"- **Date**: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}",
         f"- **Target**: {HOSTS.name} ({30} host PA italiana)",
         f"- **Repetitions per concurrency**: {REPETITIONS}",
-        f"- **Policy**: agid_2026 enforce",
+        "- **Policy**: agid_2026 enforce",
         "",
         "## Risultati",
         "",

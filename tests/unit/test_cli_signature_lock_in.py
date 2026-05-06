@@ -62,3 +62,27 @@ def test_top_level_help_lists_all_subcommands() -> None:
     out = result.stdout
     for sub in ("scan", "report", "batch", "batch-diff", "cbom", "version"):
         assert sub in out, f"subcommand {sub!r} missing from top-level --help"
+
+
+def test_version_flag_long_form() -> None:
+    """``pqc-audit --version`` deve stampare la versione e uscire 0."""
+    from pqc_audit import __version__
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert __version__ in result.stdout
+
+
+def test_version_flag_short_form() -> None:
+    """``pqc-audit -V`` deve essere alias di --version."""
+    from pqc_audit import __version__
+    result = runner.invoke(app, ["-V"])
+    assert result.exit_code == 0
+    assert __version__ in result.stdout
+
+
+def test_version_subcommand_still_works() -> None:
+    """``pqc-audit version`` (subcomando legacy) resta supportato."""
+    from pqc_audit import __version__
+    result = runner.invoke(app, ["version"])
+    assert result.exit_code == 0
+    assert __version__ in result.stdout

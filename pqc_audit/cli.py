@@ -46,6 +46,27 @@ scan_app = typer.Typer(name="scan", help="Run a scanner against one or more targ
 app.add_typer(scan_app, name="scan")
 
 
+def _version_callback(value: bool) -> None:
+    """Print version and exit, matching the conventional ``--version`` flag."""
+    if value:
+        typer.echo(__version__)
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        help="Print the installed pqc-audit-italia version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """Crypto-discovery and crypto-agility audit toolkit (Italian market)."""
+
+
 @app.command("version")
 def version_cmd() -> None:
     """Print the installed pqc-audit-italia version."""
