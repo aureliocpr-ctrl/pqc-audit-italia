@@ -207,6 +207,44 @@ def assess_certificate(
             )
         )
 
+    # Validity window — surface expired / not-yet-valid certs.
+    # We do not depend on the *handshaking* client to refuse: a
+    # browser will, but our auditor doesn't, by design (we want to
+    # inspect even broken certs). Without this check the report
+    # would silently miss "the cert expired six months ago" — a
+    # real-world failure mode in PA / banche legacy stacks.
+    now = datetime.now(UTC)
+    if km.not_after is not None and km.not_after < now:
+        days_expired = (now - km.not_after).days
+        vulns.append(
+            Vulnerability(
+                title=f"Certificate expired ({days_expired} days ago)",
+                description=(
+                    f"Certificate validity ended at {km.not_after.isoformat()}. "
+                    "Browsers and modern TLS clients reject this cert; the "
+                    "service is operationally degraded and trust is broken."
+                ),
+                severity=RiskLevel.HIGH,
+                cwe="CWE-298",
+                affected_asset_ids=affected,
+            )
+        )
+    if km.not_before is not None and km.not_before > now:
+        days_until_valid = (km.not_before - now).days
+        vulns.append(
+            Vulnerability(
+                title=f"Certificate not yet valid (starts in {days_until_valid} days)",
+                description=(
+                    f"Certificate validity begins at {km.not_before.isoformat()}. "
+                    "Issued cert is being deployed before its activation date "
+                    "— either a clock-skew issue or a deployment mistake."
+                ),
+                severity=RiskLevel.MEDIUM,
+                cwe="CWE-298",
+                affected_asset_ids=affected,
+            )
+        )
+
     # Self-signed leaf in a public-facing TLS service.
     if km.is_self_signed and not km.is_ca:
         vulns.append(
