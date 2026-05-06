@@ -293,6 +293,18 @@ def batch_cmd(
         "--enforce",
         help="Embed policy_evaluation in each per-host report.",
     ),
+    concurrency: int = typer.Option(
+        1,
+        "--concurrency",
+        "-j",
+        help=(
+            "Max scans in flight at once. ``1`` (default) is strict "
+            "sequential. Higher values speed up large portfolios but "
+            "stress shared rate limits and DNS resolvers."
+        ),
+        min=1,
+        max=32,
+    ),
     out_dir: str = typer.Option(
         ...,
         "--out",
@@ -350,6 +362,7 @@ def batch_cmd(
             policy=policy,
             sensitivity=data_sensitivity_years,
             enforce=enforce,
+            concurrency=concurrency,
         )
     )
     rows = [summarize_one(t.host, r) for t, r in pairs]

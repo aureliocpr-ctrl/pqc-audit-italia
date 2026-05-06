@@ -132,6 +132,56 @@ def test_render_markdown_includes_header_and_table() -> None:
     assert "err.example" in md and "Boom" in md
 
 
+def test_run_batch_concurrency_caps_in_flight(monkeypatch) -> None:
+    """With ``concurrency=2``, no more than 2 ``run_one`` coroutines
+    should be in flight at once. With the default ``concurrency=1``
+    the in-flight counter must never exceed 1."""
+
+    import asyncio
+
+    in_flight = {"now": 0, "peak": 0}
+
+    async def _fake_run_one(target, **_kw):
+        in_flight["now"] += 1
+        in_flight["peak"] = max(in_flight["peak"], in_flight["now"])
+        await asyncio.sleep(0.05)
+        in_flight["now"] -= 1
+        return {"host": target.host, "scan_results": [{"assets": []}]}
+
+    monkeypatch.setattr(batch_mod, "run_one", _fake_run_one)
+
+    targets = [batch_mod.Target(host=f"h{i}.example") for i in range(6)]
+
+    pairs_seq = asyncio.run(
+        batch_mod.run_batch(
+            targets, policy="agid_2026", sensitivity=15, enforce=False,
+            concurrency=1,
+        )
+    )
+    assert len(pairs_seq) == 6
+    assert in_flight["peak"] == 1, (
+        f"sequential should keep peak in-flight at 1, got {in_flight['peak']}"
+    )
+
+    in_flight["peak"] = 0
+    pairs_par = asyncio.run(
+        batch_mod.run_batch(
+            targets, policy="agid_2026", sensitivity=15, enforce=False,
+            concurrency=3,
+        )
+    )
+    assert len(pairs_par) == 6
+    # The semaphore must cap parallelism, but it must allow >1.
+    assert 1 < in_flight["peak"] <= 3, (
+        f"concurrency=3 should cap at 3 (and exceed 1), "
+        f"got peak={in_flight['peak']}"
+    )
+
+    # Pairing is preserved in both modes.
+    assert [t.host for t, _ in pairs_seq] == [t.host for t in targets]
+    assert sorted(t.host for t, _ in pairs_par) == sorted(t.host for t in targets)
+
+
 def test_render_markdown_pqc_zero_emits_p5_warning() -> None:
     rows = [
         {

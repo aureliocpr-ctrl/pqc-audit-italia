@@ -231,18 +231,48 @@ async def run_batch(
     policy: str,
     sensitivity: int,
     enforce: bool,
+    concurrency: int = 1,
 ) -> list[tuple[Target, dict[str, Any]]]:
-    """Sequentially scan every target and pair each with its report dict."""
-    out: list[tuple[Target, dict[str, Any]]] = []
-    for tgt in targets:
-        report = await run_one(
-            tgt,
-            policy=policy,
-            sensitivity=sensitivity,
-            enforce=enforce,
-        )
-        out.append((tgt, report))
-    return out
+    """Scan every target and pair each with its report dict.
+
+    With ``concurrency=1`` (default) the targets are scanned in
+    strict sequence — same behaviour as before this option was
+    introduced. With ``concurrency=N>1`` up to ``N`` scans run
+    in parallel via ``asyncio.gather`` bounded by an
+    ``asyncio.Semaphore(N)``. The pairing ``(target, report)``
+    is preserved in both modes.
+    """
+    import asyncio
+
+    # Materialise the iterable once so we can both run the scans
+    # and emit deterministic ordering on the output.
+    target_list = list(targets)
+
+    if concurrency <= 1:
+        out: list[tuple[Target, dict[str, Any]]] = []
+        for tgt in target_list:
+            report = await run_one(
+                tgt,
+                policy=policy,
+                sensitivity=sensitivity,
+                enforce=enforce,
+            )
+            out.append((tgt, report))
+        return out
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _bounded(tgt: Target) -> tuple[Target, dict[str, Any]]:
+        async with sem:
+            report = await run_one(
+                tgt,
+                policy=policy,
+                sensitivity=sensitivity,
+                enforce=enforce,
+            )
+            return tgt, report
+
+    return await asyncio.gather(*(_bounded(t) for t in target_list))
 
 
 __all__ = [
