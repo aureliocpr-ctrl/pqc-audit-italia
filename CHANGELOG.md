@@ -7,15 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-06
+
 ### Added
 
 - **Phase 6.5 — Reporter HTML self-contained** (2026-05-06): il
-  subcomando `pqc-audit batch` emette ora anche `batch_report.html`
-  oltre a `.md` e `.json`. Il file è un singolo documento con CSS+JS
-  inline (no CDN, no font remoti), pensato per essere allegato a
-  un'e-mail al CISO/CFO. Espone una text-input per filtrare la tabella
-  per host e un pulsante "Scarica CSV" per pivot rapido a foglio
-  elettronico. Hostname HTML-escaped (anti-XSS pinned in test).
+  subcomando `pqc-audit batch` emette ora `batch_report.html`
+  oltre a `.md` e `.json`. Documento autonomo, CSS+JS inline,
+  filtro per host + bottone "Scarica CSV".
+- **Phase 6.6 — `pqc-audit batch-diff`** (2026-05-06): nuovo
+  subcomando per confrontare due `batch_report.json` snapshot
+  (caso d'uso "snapshot mensile"): improved / regressed /
+  unchanged / added / removed con rendering Markdown italiano.
+- **Edge-case detection** (2026-05-06): TLS scanner ora flagga
+  certificati scaduti (`not_valid_after < now()`, severity HIGH,
+  CWE-298) e certificati non-ancora-validi (`not_valid_before
+  > now()`, severity MEDIUM). Bug pre-esistente trovato dal
+  TDD strict — il scanner mancava interamente il check di
+  validità.
+- **Integration test suite** (2026-05-06): tre nuovi job in CI
+  per blindare il path scanner ↔ socket ↔ TLS handshake reale:
+  ECDSA-P256 cert detection, batch CLI end-to-end, edge-case
+  scenari (expired, RSA-1024 offline, SHA-1 skip).
+
+### Changed
+
+- Pulizia lint completa: ruff zero errori, ruff format pulito,
+  bandit zero issues. Lavoro di igiene CI.
+- Sostituiti 3 `assert` come type-guard con `if x is None: raise`
+  per sopravvivere a `python -O` (flag che strippa gli assert).
+
+### Fixed
+
+- TLS scanner ora rileva certificati scaduti (era un silent
+  pass — il deliverable non avvertiva il CISO che il sito era
+  servendo un cert scaduto).
+
+### Security
+
+- Test XSS esteso da 1 payload a 9 (parametrizzato): script
+  inline, attribute escape, SVG namespace, `javascript:` URL,
+  iframe srcdoc, polyglot, CR/LF injection, payload pre-encoded.
+
+### CI
+
+- `tests/integration` ora gira nella matrice CI (3 OS × 3
+  Python). Era escluso, lasciando un blind spot sul path
+  network/TLS reale.
+- `lint.yml` workflow ora green sul ruff check + ruff format.
+
+## [0.1.0] - 2026-05-04 — first preview
+
+### Added
+
 - **Phase 6 — `pqc-audit batch`** (2026-05-06): nuovo subcomando
   per scan multi-host in unica esecuzione.
   - Input mutex `--targets` inline (comma-separated `host[:port]`)
