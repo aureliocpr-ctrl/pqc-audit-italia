@@ -364,6 +364,32 @@ def test_batch_fail_on_violations_zero_when_clean() -> None:
                    for p in payload), payload
 
 
+def test_batch_empty_csv_exits_nonzero(tmp_path: Path) -> None:
+    """An empty CSV (header-only or zero rows) must NOT silently
+    produce an empty report — the CLI must reject the input with
+    a clear error message and a non-zero exit code so a CI pipeline
+    notices the misconfiguration."""
+    csv_path = tmp_path / "empty.csv"
+    csv_path.write_text("host,port,scope\n", encoding="utf-8")
+    out = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        [
+            "batch",
+            "--csv", str(csv_path),
+            "--out", str(out),
+        ],
+    )
+    assert result.exit_code != 0, (
+        "expected non-zero exit on empty CSV; "
+        f"got {result.exit_code}\n{result.stdout}"
+    )
+    haystack = (result.stdout + (result.stderr or "")).lower()
+    assert "no targets" in haystack or "empty" in haystack, (
+        f"expected error message about empty input; got: {result.stdout!r}"
+    )
+
+
 def test_batch_csv_handles_utf8_bom(tmp_path: Path) -> None:
     """Excel writes a UTF-8 BOM at the start of the file. Must not be
     treated as part of the first column header."""
