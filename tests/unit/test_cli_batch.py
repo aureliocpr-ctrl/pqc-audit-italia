@@ -272,6 +272,98 @@ def test_batch_requires_at_least_one_source(tmp_path: Path) -> None:
     assert "required" in haystack or "must" in haystack or "either" in haystack
 
 
+def test_batch_fail_on_violations_returns_nonzero_when_fail(tmp_path: Path) -> None:
+    """``--fail-on-violations`` is a CI gate: if ANY host has a
+    policy_evaluation FAIL, the CLI must exit with code 3 so a
+    pipeline can block the build. Uses a stub run_one to inject
+    a deterministic FAIL verdict without touching the network."""
+    fail_payload = {
+        "scan_results": [{
+            "assets": [{"algorithm": {"name": "RSA", "key_size_bits": 2048}}],
+            "vulnerabilities": [],
+        }],
+        "metadata": {"risk_summary": {"hndl_max": 100, "qday_max": 80}},
+        "recommendations": [{"to_algorithm": "ML-DSA-65", "priority": 5}],
+        "policy_evaluation": {
+            "overall_verdict": "FAIL",
+            "violations": [{"rule": "rsa_forbidden", "asset": "RSA-2048"}],
+        },
+    }
+
+    async def _fake_run_one(target, **_kw):
+        return dict(fail_payload, host=target.host)
+
+    out = tmp_path / "out"
+    from unittest.mock import patch
+    with patch.object(batch_mod, "run_one", _fake_run_one):
+        result = runner.invoke(
+            app,
+            [
+                "batch",
+                "--targets", "bad.example",
+                "--policy", "agid_2026",
+                "--enforce",
+                "--fail-on-violations",
+                "--out", str(out),
+            ],
+        )
+
+    # Reports must still be written even when we exit non-zero.
+    assert (out / "batch_report.md").exists()
+    assert (out / "batch_report.json").exists()
+    # Exit code 3 reserved for "policy gate tripped".
+    assert result.exit_code == 3, (
+        f"expected exit 3 with --fail-on-violations on a FAIL host; "
+        f"got {result.exit_code}\n{result.stdout}"
+    )
+
+
+def test_batch_fail_on_violations_zero_when_clean() -> None:
+    """When every host passes (no FAIL / no error), the gate
+    must exit 0. Uses a stub run_one to avoid network."""
+    import json
+
+    pass_payload = {
+        "scan_results": [{"assets": [], "vulnerabilities": []}],
+        "metadata": {"risk_summary": {"hndl_max": 50, "qday_max": 30}},
+        "recommendations": [],
+        "policy_evaluation": {"overall_verdict": "PASS", "violations": []},
+    }
+
+    async def _fake_run_one(target, **_kw):
+        return dict(pass_payload, host=target.host)
+
+    from pqc_audit import batch as _batch_mod
+
+    import tempfile
+    import os
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "out")
+        # We can't monkeypatch via CliRunner cleanly, so go straight
+        # at the helper layer.
+        from unittest.mock import patch
+        with patch.object(_batch_mod, "run_one", _fake_run_one):
+            result = runner.invoke(
+                app,
+                [
+                    "batch",
+                    "--targets", "ok1.example,ok2.example",
+                    "--policy", "agid_2026",
+                    "--enforce",
+                    "--fail-on-violations",
+                    "--out", out,
+                ],
+            )
+        assert result.exit_code == 0, (
+            f"expected exit 0 when all hosts PASS; got {result.exit_code}\n"
+            f"{result.stdout}"
+        )
+        payload = json.loads(open(os.path.join(out, "batch_report.json"), encoding="utf-8").read())
+        assert all(p.get("policy_evaluation", {}).get("overall_verdict") == "PASS"
+                   for p in payload), payload
+
+
 def test_batch_csv_handles_utf8_bom(tmp_path: Path) -> None:
     """Excel writes a UTF-8 BOM at the start of the file. Must not be
     treated as part of the first column header."""

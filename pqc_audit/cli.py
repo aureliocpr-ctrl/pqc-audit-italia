@@ -305,6 +305,15 @@ def batch_cmd(
         min=1,
         max=32,
     ),
+    fail_on_violations: bool = typer.Option(
+        False,
+        "--fail-on-violations",
+        help=(
+            "CI gate: exit with code 3 if at least one host fails the "
+            "policy (verdict FAIL or scan error). Reports are still "
+            "written so the build can publish them."
+        ),
+    ),
     out_dir: str = typer.Option(
         ...,
         "--out",
@@ -379,6 +388,20 @@ def batch_cmd(
     )
     typer.echo(f"wrote {out_path / 'batch_report.md'}")
     typer.echo(f"wrote {out_path / 'batch_report.json'}")
+
+    if fail_on_violations:
+        # Trip the CI gate when ANY row reports an error or a FAIL verdict.
+        bad = sum(
+            1 for r in rows
+            if r.get("status") == "error"
+            or r.get("policy_verdict") == "FAIL"
+        )
+        if bad:
+            typer.echo(
+                f"--fail-on-violations: {bad} host(s) failed — exiting 3.",
+                err=True,
+            )
+            raise typer.Exit(code=3)
 
 
 if __name__ == "__main__":
