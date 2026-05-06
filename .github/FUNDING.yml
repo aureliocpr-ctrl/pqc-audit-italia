@@ -1,0 +1,14 @@
+# GitHub Funding configuration
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+# Sponsor button (commented until OMNEX has a public sponsor channel)
+# github: aureliocpr
+# patreon: aureliocpr
+# open_collective: omnex
+# ko_fi: aureliocpr
+# tidelift: pypi/pqc-audit-italia
+# custom: ['https://omnexcyber.com/sponsor']
+
+# Disabled until OMNEX has a public sponsor / commercial support
+# channel ready. Until then, commercial support requests go to
+# aurelio@omnexcyber.com (see SECURITY.md and README.md).
