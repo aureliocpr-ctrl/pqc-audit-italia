@@ -42,7 +42,7 @@
 
 ## Post-release
 
-- [ ] Verifica github.com/aureliocpr/pqc-audit-italia release page
+- [ ] Verifica github.com/aureliocpr-ctrl/pqc-audit-italia release page
 - [ ] Crea entry CITATION.cff con versione e data
 - [ ] Update `docs/INVESTOR_LIVE_EVIDENCE.md` con timestamp ultimo scan
 - [ ] Lancia un live scan PA aggiornato (`make live-evidence`) per

@@ -299,8 +299,8 @@ def render(
         note_html,
         "<footer>",
         f"Report generato da <b>pqc-audit-italia v{escape(__version__)}</b> — "
-        '<a href="https://github.com/aureliocpr/pqc-audit-italia">'
-        "github.com/aureliocpr/pqc-audit-italia</a>. AGPL-3.0.",
+        '<a href="https://github.com/aureliocpr-ctrl/pqc-audit-italia">'
+        "github.com/aureliocpr-ctrl/pqc-audit-italia</a>. AGPL-3.0.",
         "</footer>",
         f"<script>{_JS}</script>",
         "</body></html>",

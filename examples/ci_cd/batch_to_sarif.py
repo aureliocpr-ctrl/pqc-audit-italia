@@ -47,28 +47,26 @@ def _build_run(reports: list[dict]) -> dict[str, Any]:
             rule_id = "scan_failure"
             if rule_id not in seen_rules:
                 seen_rules.add(rule_id)
-                rules.append({
-                    "id": rule_id,
-                    "shortDescription": {"text": "Scan failed"},
-                    "fullDescription": {
-                        "text": "TLS handshake failed — host unreachable, "
-                                "TLS-disabled, or behind a firewall."
-                    },
-                })
-            results.append({
-                "ruleId": rule_id,
-                "level": "warning",
-                "message": {
-                    "text": (
-                        f"Host {host}: {report.get('error', 'unknown error')}"
-                    )
-                },
-                "locations": [{
-                    "physicalLocation": {
-                        "artifactLocation": {"uri": f"tls://{host}"}
+                rules.append(
+                    {
+                        "id": rule_id,
+                        "shortDescription": {"text": "Scan failed"},
+                        "fullDescription": {
+                            "text": "TLS handshake failed — host unreachable, "
+                            "TLS-disabled, or behind a firewall."
+                        },
                     }
-                }],
-            })
+                )
+            results.append(
+                {
+                    "ruleId": rule_id,
+                    "level": "warning",
+                    "message": {"text": (f"Host {host}: {report.get('error', 'unknown error')}")},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": f"tls://{host}"}}}
+                    ],
+                }
+            )
             continue
 
         # OK path: walk the AuditReport structure
@@ -80,25 +78,23 @@ def _build_run(reports: list[dict]) -> dict[str, Any]:
                 rule_id = str(vuln.get("identifier") or "pqc.vulnerability")
                 if rule_id not in seen_rules:
                     seen_rules.add(rule_id)
-                    rules.append({
-                        "id": rule_id,
-                        "shortDescription": {
-                            "text": str(vuln.get("title", rule_id))
-                        },
-                        "fullDescription": {
-                            "text": str(vuln.get("description", ""))
-                        },
-                    })
-                results.append({
-                    "ruleId": rule_id,
-                    "level": _severity_to_sarif(vuln.get("severity", "note")),
-                    "message": {"text": str(vuln.get("description", ""))},
-                    "locations": [{
-                        "physicalLocation": {
-                            "artifactLocation": {"uri": f"tls://{host}"}
+                    rules.append(
+                        {
+                            "id": rule_id,
+                            "shortDescription": {"text": str(vuln.get("title", rule_id))},
+                            "fullDescription": {"text": str(vuln.get("description", ""))},
                         }
-                    }],
-                })
+                    )
+                results.append(
+                    {
+                        "ruleId": rule_id,
+                        "level": _severity_to_sarif(vuln.get("severity", "note")),
+                        "message": {"text": str(vuln.get("description", ""))},
+                        "locations": [
+                            {"physicalLocation": {"artifactLocation": {"uri": f"tls://{host}"}}}
+                        ],
+                    }
+                )
 
         # Policy evaluation FAIL → emit one SARIF result per violation
         pe = report.get("policy_evaluation") or {}
@@ -106,41 +102,39 @@ def _build_run(reports: list[dict]) -> dict[str, Any]:
             rule_id = f"policy.{v.get('rule', 'violation')}"
             if rule_id not in seen_rules:
                 seen_rules.add(rule_id)
-                rules.append({
-                    "id": rule_id,
-                    "shortDescription": {
-                        "text": f"Policy violation: {v.get('rule', '?')}"
-                    },
-                    "fullDescription": {
-                        "text": str(v.get("reason", "policy violation"))
-                    },
-                })
+                rules.append(
+                    {
+                        "id": rule_id,
+                        "shortDescription": {"text": f"Policy violation: {v.get('rule', '?')}"},
+                        "fullDescription": {"text": str(v.get("reason", "policy violation"))},
+                    }
+                )
             host = "?"
             sr_list = report.get("scan_results") or []
             if sr_list:
                 t = sr_list[0].get("target", "?")
                 host = str(t).split(":")[0] if isinstance(t, str) else "?"
-            results.append({
-                "ruleId": rule_id,
-                "level": "error",
-                "message": {
-                    "text": (
-                        f"Host {host} fails policy "
-                        f"{pe.get('policy', '?')}: {v.get('reason', '?')}"
-                    )
-                },
-                "locations": [{
-                    "physicalLocation": {
-                        "artifactLocation": {"uri": f"tls://{host}"}
-                    }
-                }],
-            })
+            results.append(
+                {
+                    "ruleId": rule_id,
+                    "level": "error",
+                    "message": {
+                        "text": (
+                            f"Host {host} fails policy "
+                            f"{pe.get('policy', '?')}: {v.get('reason', '?')}"
+                        )
+                    },
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": f"tls://{host}"}}}
+                    ],
+                }
+            )
 
     return {
         "tool": {
             "driver": {
                 "name": "pqc-audit-italia",
-                "informationUri": "https://github.com/aureliocpr/pqc-audit-italia",
+                "informationUri": "https://github.com/aureliocpr-ctrl/pqc-audit-italia",
                 "rules": rules,
             }
         },
@@ -150,10 +144,8 @@ def _build_run(reports: list[dict]) -> dict[str, Any]:
 
 def main() -> int:
     p = argparse.ArgumentParser(prog="batch_to_sarif")
-    p.add_argument("--input", "-i", required=True,
-                   help="batch_report.json from `pqc-audit batch`")
-    p.add_argument("--output", "-o", required=True,
-                   help="Destination SARIF 2.1.0 file")
+    p.add_argument("--input", "-i", required=True, help="batch_report.json from `pqc-audit batch`")
+    p.add_argument("--output", "-o", required=True, help="Destination SARIF 2.1.0 file")
     args = p.parse_args()
 
     reports = json.loads(Path(args.input).read_text(encoding="utf-8"))
@@ -163,7 +155,7 @@ def main() -> int:
 
     sarif = {
         "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/cos02/"
-                   "schemas/sarif-schema-2.1.0.json",
+        "schemas/sarif-schema-2.1.0.json",
         "version": "2.1.0",
         "runs": [_build_run(reports)],
     }

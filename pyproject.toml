@@ -88,11 +88,11 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/aureliocpr/pqc-audit-italia"
-Documentation = "https://aureliocpr.github.io/pqc-audit-italia/"
-Repository = "https://github.com/aureliocpr/pqc-audit-italia"
-Issues = "https://github.com/aureliocpr/pqc-audit-italia/issues"
-Changelog = "https://github.com/aureliocpr/pqc-audit-italia/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/aureliocpr-ctrl/pqc-audit-italia"
+Documentation = "https://aureliocpr-ctrl.github.io/pqc-audit-italia/"
+Repository = "https://github.com/aureliocpr-ctrl/pqc-audit-italia"
+Issues = "https://github.com/aureliocpr-ctrl/pqc-audit-italia/issues"
+Changelog = "https://github.com/aureliocpr-ctrl/pqc-audit-italia/blob/main/CHANGELOG.md"
 
 [project.scripts]
 pqc-audit = "pqc_audit.cli:app"

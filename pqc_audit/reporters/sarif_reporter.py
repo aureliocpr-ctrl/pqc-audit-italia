@@ -24,7 +24,7 @@ _SARIF_SCHEMA_URL = (
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
 )
 _TOOL_NAME = "pqc-audit-italia"
-_TOOL_INFO_URI = "https://github.com/aureliocpr/pqc-audit-italia"
+_TOOL_INFO_URI = "https://github.com/aureliocpr-ctrl/pqc-audit-italia"
 _NIST_HELP_URI = "https://csrc.nist.gov/projects/post-quantum-cryptography"
 
 

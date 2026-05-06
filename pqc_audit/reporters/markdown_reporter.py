@@ -21,7 +21,7 @@ from pqc_audit.core.models import AuditReport, CryptoAsset, RiskLevel, Vulnerabi
 _DISCLAIMER = (
     "_Report generato automaticamente da_ **pqc-audit-italia** _v"
     + __version__
-    + "_ — _GitHub: https://github.com/aureliocpr/pqc-audit-italia_."
+    + "_ — _GitHub: https://github.com/aureliocpr-ctrl/pqc-audit-italia_."
 )
 
 

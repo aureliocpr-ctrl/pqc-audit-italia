@@ -16,7 +16,7 @@ A formal CLA-bot will be enabled before the first stable release.
 
 ## Reporting bugs
 
-Open an [issue](https://github.com/aureliocpr/pqc-audit-italia/issues) using the bug template. Include:
+Open an [issue](https://github.com/aureliocpr-ctrl/pqc-audit-italia/issues) using the bug template. Include:
 
 - `pqc-audit --version`
 - Python version, OS
@@ -36,7 +36,7 @@ Open an issue using the feature template. Explain:
 ## Development setup
 
 ```bash
-git clone https://github.com/aureliocpr/pqc-audit-italia.git
+git clone https://github.com/aureliocpr-ctrl/pqc-audit-italia.git
 cd pqc-audit-italia
 python -m venv .venv
 source .venv/bin/activate    # Windows: .venv\Scripts\activate

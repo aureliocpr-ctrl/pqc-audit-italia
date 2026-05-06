@@ -8,7 +8,7 @@ authors:
 title: "pqc-audit-italia: Crypto-discovery and crypto-agility audit toolkit for the Italian market"
 version: "0.2.0"
 date-released: "2026-05-06"
-url: "https://github.com/aureliocpr/pqc-audit-italia"
+url: "https://github.com/aureliocpr-ctrl/pqc-audit-italia"
 license: AGPL-3.0-only
 keywords:
   - post-quantum-cryptography
@@ -47,4 +47,4 @@ preferred-citation:
   title: "pqc-audit-italia"
   version: "0.2.0"
   year: 2026
-  url: "https://github.com/aureliocpr/pqc-audit-italia"
+  url: "https://github.com/aureliocpr-ctrl/pqc-audit-italia"
