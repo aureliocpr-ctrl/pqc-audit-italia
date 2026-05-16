@@ -62,6 +62,10 @@ dependencies = [
     "cryptography>=42.0,<46.0",
     "typer>=0.12,<1.0",
     "pyyaml>=6.0,<7.0",
+    # defusedxml is required by the SAML scanner to block XXE / billion
+    # laughs payloads. Kept as a hard dep (not extra) because the SAML
+    # path is part of the core scanner set since Sprint 1.
+    "defusedxml>=0.7,<1.0",
 ]
 
 [project.optional-dependencies]
