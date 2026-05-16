@@ -13,6 +13,7 @@ draft-ietf-dnsop-dnssec-pqc reservations for ML-DSA.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -162,6 +163,33 @@ def _vulnerabilities_for(
     return vulns
 
 
+# A DNSKEY RR in master-file format reads as::
+#
+#   name    ttl    class    DNSKEY    flags protocol algorithm <key...>
+#
+# We anchor the match on the CLASS field (IN / CH / HS) immediately
+# before the literal ``DNSKEY`` so we never confuse a real DNSKEY RR
+# with the ``type-covered`` field of an RRSIG/NSEC/CDS that happens to
+# carry ``DNSKEY`` as its second token. A previous ``tokens.index("DNSKEY")``
+# implementation read ``RRSIG DNSKEY 8 2 3600 ...`` as if 3600 were
+# the algorithm number (it is the Original-TTL), producing spurious
+# ``DNSSEC-Alg3600`` assets — caught by the adversarial counterexample
+# worker on 2026-05-17.
+_DNSKEY_RR_RE = re.compile(
+    r"(?:IN|CH|HS)\s+DNSKEY\s+(\d+)\s+(\d+)\s+(\d+)\b",
+    re.IGNORECASE,
+)
+
+# Loose match used to detect malformed DNSKEY RRs the strict regex missed.
+# If a line declares ``IN DNSKEY`` (or CH/HS) but the next three tokens
+# do NOT parse as integers, surface it as a scan error instead of
+# silently skipping — the auditor needs to know.
+_DNSKEY_LOOSE_RE = re.compile(
+    r"(?:IN|CH|HS)\s+DNSKEY\b",
+    re.IGNORECASE,
+)
+
+
 def _parse_dnskey_line(line: str) -> int | None:
     """Return the algorithm number for a DNSKEY RR, or ``None`` for non-matches.
 
@@ -169,31 +197,28 @@ def _parse_dnskey_line(line: str) -> int | None:
 
         name    ttl    class   DNSKEY    flags protocol algorithm <key>
 
-    Indices we care about: the field immediately following ``DNSKEY``
-    is the flags, then protocol, then algorithm. We use ``DNSKEY`` as a
-    landmark token because TTL and class ordering can vary in real
-    zone files (e.g. ``IN`` may come before TTL in BIND format).
+    Only lines where ``DNSKEY`` follows a DNS *class* (``IN``, ``CH``,
+    ``HS``) are recognised as DNSKEY records. This deliberately rejects
+    BIND master files where the class field has been omitted; users
+    that need that format should pre-process via ``dig +noall +answer``
+    which always emits the class.
+
+    Raises:
+        ValueError: when the line clearly declares a DNSKEY RR (loose
+            match) but the strict pattern fails to parse — i.e. the
+            record is malformed and the auditor should see an error.
     """
-    tokens = line.split()
-    try:
-        idx = tokens.index("DNSKEY")
-    except ValueError:
+    m = _DNSKEY_RR_RE.search(line)
+    if m is None:
+        if _DNSKEY_LOOSE_RE.search(line):
+            raise ValueError(f"malformed DNSKEY record: {line!r}")
         return None
-    # After DNSKEY we need at least: flags, protocol, algorithm, key.
-    _MIN_FIELDS_AFTER_DNSKEY = 4
-    if len(tokens) < idx + 1 + _MIN_FIELDS_AFTER_DNSKEY:
-        raise ValueError(f"DNSKEY record truncated: {line!r}")
-    flags_str = tokens[idx + 1]
-    proto_str = tokens[idx + 2]
-    algo_str = tokens[idx + 3]
+    flags_str, proto_str, algo_str = m.group(1), m.group(2), m.group(3)
     try:
-        # Flags and protocol must parse to ints too, otherwise this is
-        # a SIG/RRSIG line or a comment that happens to mention DNSKEY
-        # as the type-covered.
         int(flags_str)
         int(proto_str)
         return int(algo_str)
-    except ValueError as e:
+    except ValueError as e:  # pragma: no cover — regex already gates digits
         raise ValueError(f"DNSKEY fields are not integers: {line!r}") from e
 
 

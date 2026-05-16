@@ -64,10 +64,42 @@ def test_dnssec_scanner_parses_algorithm_8_rsa_sha256(tmp_path: Path) -> None:
     # Algorithm 8 = RSA/SHA-256 (RFC 8624 RECOMMENDED). Two DNSKEY
     # records share the same algorithm; both should be discoverable.
     algos = [a.algorithm.canonical_name for a in result.assets]
-    assert algos.count("RSA-SHA-256") >= 2
+    assert algos.count("RSA-SHA-256") == 2
+    # The fixture also contains a `RRSIG DNSKEY 8 2 ...` line which
+    # MUST NOT be parsed as a DNSKEY record (regression test against the
+    # `tokens.index("DNSKEY")` landmark false-positive that previously
+    # turned RRSIG Original-TTL=3600 into a spurious algorithm 3600).
+    # The full fixture has exactly 2 DNSKEY records and 1 RRSIG; we
+    # require strict equality to lock the behaviour.
+    assert len(result.assets) == 2
     # RECOMMENDED algo → no HIGH/CRITICAL finding.
     high = [v for v in result.vulnerabilities if v.severity >= RiskLevel.HIGH]
     assert not high
+    # And critically NO unknown-algorithm finding either (would only
+    # happen if RRSIG were mistakenly parsed as DNSKEY).
+    medium = [v for v in result.vulnerabilities if v.severity >= RiskLevel.MEDIUM]
+    assert not any("unknown" in v.title.lower() for v in medium)
+
+
+def test_dnssec_scanner_ignores_rrsig_records_covering_dnskey(tmp_path: Path) -> None:
+    """RRSIG records that *cover* DNSKEY must not be misread as DNSKEY records.
+
+    Regression test: ``tokens.index("DNSKEY")`` matched the type-covered
+    field of an RRSIG, treating its Original-TTL as the algorithm number
+    and emitting a CryptoAsset for ``DNSSEC-Alg3600``.
+    """
+    content = (
+        "example.com.        3600    IN  RRSIG   DNSKEY 8 2 3600 "
+        "20260601000000 20260501000000 12345 example.com. dummysig==\n"
+    )
+    result = _run_scan(tmp_path, content)
+    assert result.assets == [], (
+        f"RRSIG covering DNSKEY must not produce assets, got: "
+        f"{[a.algorithm.canonical_name for a in result.assets]}"
+    )
+    # Also must not emit an 'unknown algorithm' finding for the spurious
+    # algorithm number 3600 (the Original-TTL field).
+    assert not any("3600" in v.title for v in result.vulnerabilities)
 
 
 def test_dnssec_scanner_flags_sha1_algorithms(tmp_path: Path) -> None:
