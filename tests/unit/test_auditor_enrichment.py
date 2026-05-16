@@ -118,6 +118,30 @@ def test_enrich_dedupes_recommendations_per_algorithm() -> None:
     assert len(enriched.recommendations) == 1
 
 
+@pytest.mark.parametrize(
+    "alg_name,expected_hybrid",
+    [
+        ("RSA", "RSA-3072+ML-DSA-65"),
+        ("ECDSA", "ECDSA-P256+ML-DSA-65"),
+        ("EdDSA", "ECDSA-P256+ML-DSA-65"),
+        ("Ed25519", "ECDSA-P256+ML-DSA-65"),
+        ("Ed448", "ECDSA-P256+ML-DSA-65"),
+    ],
+)
+def test_hybrid_for_signature_primitives_returns_signature_hybrid(
+    alg_name: str, expected_hybrid: str
+) -> None:
+    """EdDSA / Ed25519 / Ed448 are signature primitives — their hybrid
+    intermediate MUST be a signature scheme (ML-DSA), not a KEM
+    (ML-KEM). Before fix 0.2.1, EdDSA fell into the generic ``next()``
+    fallback and was mapped to ``X25519+ML-KEM-768`` — a KEM,
+    semantically wrong for a signing migration plan.
+    """
+    from pqc_audit.auditor import _hybrid_for
+
+    assert _hybrid_for(alg_name) == expected_hybrid
+
+
 @pytest.mark.asyncio
 async def test_auditor_scan_returns_enriched_report() -> None:
     """End-to-end: Auditor.scan() output already contains risk summary

@@ -17,6 +17,7 @@ alongside the classifiers.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -30,8 +31,29 @@ def list_bundled_policies() -> list[str]:
     return sorted(p.stem for p in _POLICY_DIR.glob("*.yaml"))
 
 
+# Conservative whitelist of characters allowed in a policy name. Stops
+# ``..`` / absolute paths / NUL / slash-injection from reaching the
+# filesystem walker (CWE-22 / CWE-73). Anything else MUST be added to
+# a YAML file under :data:`_POLICY_DIR` first.
+_VALID_POLICY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]*$")
+
+
 def _load_raw(name: str) -> dict[str, Any]:
-    path = _POLICY_DIR / f"{name}.yaml"
+    # Validate the name before touching the filesystem so a hostile
+    # ``../../etc/foo`` cannot turn the YAML loader into an arbitrary
+    # ``*.yaml`` read primitive on the host.
+    if not _VALID_POLICY_NAME_RE.fullmatch(name):
+        raise ValueError(
+            f"invalid policy name: {name!r}. Allowed: [A-Za-z0-9_-], "
+            "must start with an alphanumeric character."
+        )
+    path = (_POLICY_DIR / f"{name}.yaml").resolve()
+    # Belt-and-braces: enforce that the resolved path still lives inside
+    # the bundled policies directory. Catches symlink-based escapes.
+    try:
+        path.relative_to(_POLICY_DIR.resolve())
+    except ValueError as exc:
+        raise FileNotFoundError(f"policy not found: {name}") from exc
     if not path.is_file():
         raise FileNotFoundError(f"policy not found: {name}")
     with path.open("r", encoding="utf-8") as f:
@@ -51,7 +73,17 @@ def load_policy(name: str) -> dict[str, Any]:
     previously the chain walk and the merge phase each re-opened the
     same file, which was both wasteful and (in pathological cases)
     racy if the filesystem mutated between calls.
+
+    The name is validated against the whitelist regex BEFORE any
+    filesystem access, so an empty / traversal / NUL-injected name
+    cannot turn this loader into an arbitrary ``*.yaml`` read
+    primitive.
     """
+    if not name or not _VALID_POLICY_NAME_RE.fullmatch(name):
+        raise ValueError(
+            f"invalid policy name: {name!r}. Allowed: [A-Za-z0-9_-], "
+            "must start with an alphanumeric character."
+        )
     seen: set[str] = set()
     chain: list[str] = []
     cache: dict[str, dict[str, Any]] = {}

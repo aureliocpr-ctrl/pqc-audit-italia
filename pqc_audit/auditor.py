@@ -52,13 +52,23 @@ DEFAULT_DATA_SENSITIVITY_YEARS = 10
 
 
 def _hybrid_for(algorithm_name: str) -> str | None:
-    """Pick a sensible hybrid intermediate for the transition phase."""
+    """Pick a sensible hybrid intermediate for the transition phase.
+
+    Picks signature hybrids for signature primitives and KEM hybrids
+    for key-exchange primitives — without this branching, EdDSA
+    (Ed25519 / Ed448 signing) was silently mapped to a KEM hybrid
+    (X25519+ML-KEM-768) by the default fallback, which is semantically
+    wrong for a signing migration plan.
+    """
     norm = algorithm_name.upper()
     if norm.startswith("RSA"):
         return "RSA-3072+ML-DSA-65"
     if norm in ("ECDSA", "ECDH") or norm.startswith("ECDSA"):
         return "ECDSA-P256+ML-DSA-65"
-    if norm in ("DH",):
+    if norm.startswith("EDDSA") or norm in ("ED25519", "ED448"):
+        # EdDSA is a signature primitive — bridge to ML-DSA, not ML-KEM.
+        return "ECDSA-P256+ML-DSA-65"
+    if norm == "DH":
         return "X25519+ML-KEM-768"
     return next(iter(HYBRID_SCHEMES), None)
 

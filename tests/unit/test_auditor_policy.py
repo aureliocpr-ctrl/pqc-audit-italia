@@ -60,17 +60,29 @@ def test_evaluate_against_policy_uses_self_policy_by_default() -> None:
 
 
 def test_evaluate_against_policy_explicit_override() -> None:
-    """Passing policy_name explicitly overrides Auditor.policy."""
+    """Passing policy_name explicitly overrides Auditor.policy.
+
+    Note (0.2.1): both ``nist_baseline`` and ``pa_critical`` now reject
+    RSA-2048, but for *different* reasons — nist_baseline via
+    ``discouraged_algorithms`` (MEDIUM) and ``thresholds.hndl_max_score``
+    (HIGH, because RSA-2048 with the default 10y sensitivity already
+    blows past the HNDL ceiling), while pa_critical adds the explicit
+    ``forbidden_algorithms`` entry. The test verifies the OVERRIDE
+    mechanism: the policy_name on the eval matches the override, not
+    the Auditor default.
+    """
     from pqc_audit import Auditor
 
     auditor = Auditor(policy="nist_baseline")
     report = _stub_report(alg_name="RSA", key_size=2048)
-    # nist_baseline accepts RSA-2048; pa_critical doesn't.
     nist_eval = auditor.evaluate_against_policy(report)
-    assert nist_eval.overall_verdict in {"PASS", "PARTIAL"}
+    assert nist_eval.policy_name == "nist_baseline"
     pa_eval = auditor.evaluate_against_policy(report, policy_name="pa_critical")
     assert pa_eval.policy_name == "pa_critical"
     assert pa_eval.non_compliant_assets == 1
+    # pa_critical is strictly more violations than nist_baseline (it
+    # adds forbidden_algorithms on top of inherited thresholds + discouraged).
+    assert len(pa_eval.violations) >= len(nist_eval.violations)
 
 
 def test_evaluate_against_policy_default_policy_loads_nist_baseline() -> None:

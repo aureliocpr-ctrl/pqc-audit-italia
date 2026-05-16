@@ -88,17 +88,49 @@ def test_cbom_reporter_top_level_specversion_1_6() -> None:
 
 
 def test_cbom_reporter_metadata_tool_and_timestamp() -> None:
+    """``metadata.tools`` MUST be the legacy Tool-array form for max
+    consumer compatibility (Dependency-Track 4.x/5.x, cyclonedx-cli).
+    The newer ``{components, services}`` object form is spec-valid in
+    CycloneDX 1.6 but rejected by some strict validators in the wild
+    — we standardize on the legacy array.
+    """
     from pqc_audit.reporters.cbom_reporter import render
 
     parsed = json.loads(render(_build_audit_report()))
     md = parsed["metadata"]
     assert "timestamp" in md
     tools = md.get("tools")
-    # CycloneDX 1.6 supports tools.components[] OR tools[]; we accept either
-    if isinstance(tools, dict):
-        assert any(t.get("name") == "pqc-audit-italia" for t in tools.get("components", []))
-    else:
-        assert any(t.get("name") == "pqc-audit-italia" for t in tools)
+    assert isinstance(tools, list), (
+        "metadata.tools must be a JSON array (legacy CycloneDX Tool form), "
+        f"got {type(tools).__name__}"
+    )
+    assert any(t.get("name") == "pqc-audit-italia" for t in tools)
+    # Every entry must carry a name + version so consumers can pin.
+    for tool in tools:
+        assert "name" in tool
+        assert "version" in tool
+
+
+def test_cbom_reporter_vulnerability_id_is_deterministic() -> None:
+    """Two renders of the same report yield identical vuln IDs.
+
+    Regression guard against the previous use of built-in ``hash()``
+    which is PEP-456 randomized per interpreter and produced a
+    different CBOM id every run — defeating idempotent CBOM diffing.
+    """
+    from pqc_audit.reporters.cbom_reporter import render
+
+    parsed_a = json.loads(render(_build_audit_report()))
+    parsed_b = json.loads(render(_build_audit_report()))
+    ids_a = sorted(v["id"] for v in parsed_a["vulnerabilities"])
+    ids_b = sorted(v["id"] for v in parsed_b["vulnerabilities"])
+    assert ids_a == ids_b
+    for vex_id in ids_a:
+        # PQC-<SEVERITY>-<8 hex chars>
+        prefix, _sev, suffix = vex_id.rsplit("-", 2)
+        assert prefix == "PQC"
+        assert len(suffix) == 8
+        int(suffix, 16)  # raises if not hex
 
 
 def test_cbom_reporter_components_count_matches_assets() -> None:

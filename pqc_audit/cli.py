@@ -97,8 +97,13 @@ def scan_tls_cmd(
     rendered = render_json(report, pretty=pretty)
     if enforce:
         evaluation = auditor.evaluate_against_policy(report)
+        evaluation_dict = json.loads(evaluation.model_dump_json())
         payload = json.loads(rendered)
-        payload["policy_evaluation"] = json.loads(evaluation.model_dump_json())
+        # Emit the evaluation at the TOP level (JSON convention) AND
+        # inside metadata.policy_evaluation so a downstream Markdown
+        # render finds it without needing the CLI roundtrip transpose.
+        payload["policy_evaluation"] = evaluation_dict
+        payload.setdefault("metadata", {})["policy_evaluation"] = evaluation_dict
         indent = 2 if pretty else None
         separators = None if pretty else (",", ":")
         rendered = json.dumps(
@@ -178,17 +183,36 @@ def _normalize_severity_in_payload(node: object) -> None:
 
 
 def _load_audit_report(input_path: str) -> AuditReport:
-    """Load an :class:`AuditReport` from a JSON file or ``-`` for stdin."""
+    """Load an :class:`AuditReport` from a JSON file or ``-`` for stdin.
+
+    ``summary`` is a JSON-reporter-side decoration and gets dropped —
+    AuditReport does not accept it.
+
+    ``policy_evaluation`` is emitted at the top level by ``scan ...
+    --enforce`` (CLI convention). It is *not* a field of AuditReport,
+    but the Markdown reporter expects to find it inside
+    ``report.metadata["policy_evaluation"]`` to render the compliance
+    section. Without this transposition the Markdown ``## Compliance``
+    block silently disappears when re-rendering an enforced JSON
+    report (cycle 06/05 audit MAJOR finding).
+    """
     raw = sys.stdin.read() if input_path == "-" else Path(input_path).read_text(encoding="utf-8")
     payload = json.loads(raw)
     # Tolerate JSON-reporter convention of emitting RiskLevel as name.
     _normalize_severity_in_payload(payload)
-    # ``summary`` and ``policy_evaluation`` are reporter-side decoration —
-    # AuditReport doesn't accept them. Drop them silently.
+    extracted_policy_eval: object | None = None
     if isinstance(payload, dict):
         payload.pop("summary", None)
-        payload.pop("policy_evaluation", None)
-    return AuditReport.model_validate(payload)
+        extracted_policy_eval = payload.pop("policy_evaluation", None)
+    report = AuditReport.model_validate(payload)
+    if extracted_policy_eval is not None:
+        new_metadata = dict(report.metadata)
+        # If somebody already set metadata['policy_evaluation'] in the
+        # source JSON, the top-level field wins — it represents the
+        # most recent CLI ``--enforce`` evaluation.
+        new_metadata["policy_evaluation"] = extracted_policy_eval
+        report = report.model_copy(update={"metadata": new_metadata})
+    return report
 
 
 def _render_text_format(fmt: str, report: AuditReport) -> str:

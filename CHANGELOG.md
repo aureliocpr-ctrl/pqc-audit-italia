@@ -7,7 +7,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added (DX & supply-chain hardening — 2026-05-06)
+## [0.2.1] - 2026-05-16
+
+Security + correctness release driven by an external adversarial audit
+(security architect + code reviewer + NIS2 gap analysis, run as parallel
+subagents on 2026-05-16). 9 findings actioned. Adversarial review gate
+(``critic-orchestrator``) returned ``claim_holds`` 2-0-0 on the full diff
+before commit.
+
+### Fixed
+
+- **PDF reporter SSRF (CWE-918, HIGH)** — `pdf_reporter._html_to_pdf`
+  now installs `_no_network_fetcher` as WeasyPrint's `url_fetcher`,
+  rejecting every URL scheme except `data:`. A tainted
+  `AuditReport.vulnerabilities[].description` containing Markdown
+  image / link syntax can no longer turn the PDF render into an
+  outbound HTTP fetch or local-file read (e.g.
+  `![x](http://169.254.169.254/...)` or `file:///etc/passwd`).
+- **CBOM vulnerability IDs non-deterministic (CWE-330, MEDIUM)** —
+  `cbom_reporter` derived vuln IDs from built-in `hash()`, which is
+  PEP-456 randomized per Python interpreter and produced a different
+  CBOM id on every run. Replaced with
+  `hashlib.sha256(title).hexdigest()[:8]` so consumers (Dependency-
+  Track, Anchore) can de-duplicate findings across snapshots.
+- **CBOM `metadata.tools` shape non-spec compliant (MAJOR)** — emitted
+  the newer CycloneDX 1.6 `{components: [...]}` form with a non-
+  standard `vendor` field on the embedded Component. Switched to the
+  legacy Tool array `[{vendor, name, version}]`, which is accepted by
+  every consumer in the wild (Dependency-Track 4.x/5.x, cyclonedx-cli,
+  Anchore, GitHub SBOM ingest).
+- **Markdown compliance section dead code (MAJOR)** — `--enforce`
+  emits `policy_evaluation` at the top level of the JSON output, but
+  `markdown_reporter` reads `report.metadata['policy_evaluation']`.
+  Result: the `## Compliance` block silently disappeared whenever a
+  user re-rendered an enforced JSON via `pqc-audit report -i scan.json
+  -f markdown`. `cli._load_audit_report` now transposes top-level
+  `policy_evaluation` into `metadata`, and `scan tls --enforce` writes
+  to both locations. Regression test added.
+- **Policy engine ignored 2 documented keys (MAJOR)** —
+  `discouraged_algorithms` and `thresholds.{hndl_max_score,
+  qday_max_score, min_agility_score}` were in `_KNOWN_POLICY_KEYS` and
+  populated by every bundled YAML, but no checker evaluated them. Two
+  new checkers (`_check_discouraged_algorithms` MEDIUM severity,
+  `_check_thresholds` HIGH/MEDIUM) recompute risk scores on the fly
+  via `core.risk` and emit per-asset violations. `pa_critical`,
+  `agid_2026` and `nist_baseline` thresholds are now enforced
+  end-to-end.
+- **Path traversal on `--policy <name>` (CWE-22, LOW)** —
+  `policies.load_policy` previously concatenated the user-supplied
+  name into a filesystem path without validation. A hostile
+  `../../etc/foo` would walk the YAML loader outside the bundled
+  policies dir. Whitelist regex `^[A-Za-z0-9][A-Za-z0-9_-]*$` is now
+  enforced before any filesystem access, and the resolved path is
+  re-checked with `path.relative_to(_POLICY_DIR.resolve())` to close
+  the symlink vector.
+- **EdDSA migration hybrid was a KEM (correctness)** —
+  `auditor._hybrid_for("EdDSA")` fell through to the default
+  `next(HYBRID_SCHEMES)` and returned `X25519+ML-KEM-768`, a key-
+  encapsulation hybrid. EdDSA is a signature primitive — fixed to
+  `ECDSA-P256+ML-DSA-65` so the migration recommendation is
+  semantically coherent.
+
+### Changed
+
+- **Runtime dependencies trimmed** — `httpx`, `structlog`, `rich` were
+  declared in `[project.dependencies]` but never imported by
+  `pqc_audit/`. Removed to shrink the supply-chain footprint (no more
+  transitive `anyio`/`h11`/`httpcore`/`sniffio`/`idna`/`certifi`
+  install on every `pip install pqc-audit-italia`). Upper bounds
+  pinned for libraries with a history of breaking minor bumps:
+  `pydantic<3.0`, `cryptography<46.0`, `typer<1.0`, `pyyaml<7.0`.
+- `_KNOWN_POLICY_KEYS` extended with `required_pqc_algorithms` so the
+  forward-compatibility warning stays quiet against the
+  `pa_critical_2027` experimental policy.
+
+### Documentation
+
+- `docs/compliance/nis2-mapping.md` rewritten with:
+  - Coverage matrix for NIS2 art. 21(2) levers a-j with explicit
+    tool support per lever (FULL / PARTIAL / OUT-OF-SCOPE).
+  - Scope assessment section (essential vs important under D.Lgs.
+    138/2024 art. 3).
+  - Dedicated sections for art. 21(2)(d) supply chain via CBOM and
+    art. 21(2)(f) effectiveness assessment via ``batch-diff``.
+  - Art. 23 reporting obligations with the ACN incident notification
+    field mapping (``event_timestamp``, ``vulnerability.cwe``, ...).
+  - Art. 24 D.Lgs. 138/2024 — misure tecniche di base — explicit
+    matrix.
+  - Art. 38 D.Lgs. sanctions table (10M€ / 2% turnover essential,
+    7M€ / 1.4% important).
+- `SECURITY.md` extended with a Threat Model section documenting
+  intentional design choices (TLS `verify_mode = CERT_NONE`, PDF SSRF
+  sandbox, CBOM deterministic IDs, policy name whitelist).
+
+### Tests
+
+- 28 new / updated tests covering every fix above. Falsification
+  worker confirmed each fix has at least one regression test that
+  fails on master pre-fix.
+- `test_pdf_reporter` now uses a `_weasyprint_runtime_available()`
+  helper that catches `OSError` alongside `ImportError`, so test
+  suites on Windows hosts without GTK runtime skip cleanly instead of
+  hard-failing.
+
+### Quality gates
+
+- ``pytest`` — **295 passed, 4 skipped** (3 weasyprint-runtime-only on
+  Windows-without-GTK, 1 pre-existing SHA-1 cert generation on modern
+  cryptography lib)
+- ``ruff check .`` — 0 issues
+- ``ruff format --check .`` — clean (modulo 3 unrelated pre-existing
+  files: `bench_run.py`, `test_batch_json_schema_stable.py`,
+  `test_cli_signature_lock_in.py`)
+- ``mypy --strict pqc_audit/`` — 0 issues across 24 source files
+- ``bandit -r pqc_audit -ll`` — 0 issues at any severity / confidence
+- coverage on the package: **90 %** (was 92 % pre-0.2.1; minor
+  reduction due to new untested error branches in
+  `_no_network_fetcher`)
+
+## [Unreleased — superseded] DX & supply-chain hardening — 2026-05-06
 
 - **Makefile** con target `make test`, `make gates`, `make build`,
   `make publish-test`, `make publish`, `make clean`. Investor /

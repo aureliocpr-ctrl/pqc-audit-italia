@@ -41,6 +41,11 @@ from pqc_audit.core.models import (
     CryptoAsset,
     RiskLevel,
 )
+from pqc_audit.core.risk import (
+    calculate_agility_score,
+    calculate_hndl_risk,
+    calculate_qday_risk,
+)
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +70,11 @@ _KNOWN_POLICY_KEYS: frozenset[str] = frozenset(
         "thresholds",
         "extra_controls",
         "references",
+        # pa_critical_2027 introduces a structured "required PQC families".
+        # The engine doesn't enforce it yet (the schema is still being
+        # finalized at AgID/ACN level), but we accept the key so the
+        # forward-compat warning stays quiet.
+        "required_pqc_algorithms",
     }
 )
 
@@ -338,12 +348,133 @@ def _check_hybrid(asset: CryptoAsset, policy: dict[str, Any]) -> list[PolicyViol
     ]
 
 
+def _check_discouraged_algorithms(
+    asset: CryptoAsset, policy: dict[str, Any]
+) -> list[PolicyViolation]:
+    """MEDIUM-severity warning sibling of ``forbidden_algorithms``.
+
+    ``discouraged_algorithms`` are primitives that are *acceptable for
+    now* (no HARD-FAIL) but should not appear in new deployments. The
+    YAML files have always carried this key — the engine just never
+    evaluated it. Surface every hit as a non-blocking violation so
+    operators see the migration debt explicitly.
+    """
+    discouraged = policy.get("discouraged_algorithms") or []
+    if not discouraged:
+        return []
+    discouraged_upper = {str(x).strip().upper() for x in discouraged}
+    candidates = {
+        asset.algorithm.name.upper(),
+        _asset_canonical(asset).upper(),
+    }
+    sig_hash = _normalize_hash(asset.metadata.get("signature_hash"))
+    if sig_hash:
+        candidates.add(sig_hash)
+    hits = candidates & discouraged_upper
+    if not hits:
+        return []
+    hit_str = ", ".join(sorted(hits))
+    return [
+        _build_violation(
+            asset=asset,
+            rule="discouraged_algorithms",
+            expected=f"prefer alternatives to {sorted(discouraged_upper)!r}",
+            actual=hit_str,
+            severity=RiskLevel.MEDIUM,
+            remediation=(
+                f"{hit_str} is discouraged by this policy. Plan migration to a "
+                "stronger primitive before the next renewal cycle."
+            ),
+        )
+    ]
+
+
+def _check_thresholds(asset: CryptoAsset, policy: dict[str, Any]) -> list[PolicyViolation]:
+    """Per-asset enforcement of ``thresholds.{hndl_max_score, qday_max_score,
+    min_agility_score}``.
+
+    Recomputes the score on the fly using
+    :mod:`pqc_audit.core.risk` so the check is self-contained and does
+    not require a pre-enriched report. The ``data_sensitivity_years``
+    used to drive HNDL is read from the policy (every bundled YAML
+    sets it).
+    """
+    thresholds = policy.get("thresholds")
+    if not isinstance(thresholds, dict):
+        return []
+    sensitivity_raw = policy.get("data_sensitivity_years", 10)
+    try:
+        sensitivity = int(sensitivity_raw)
+    except (TypeError, ValueError):
+        sensitivity = 10
+    out: list[PolicyViolation] = []
+
+    hndl_max = thresholds.get("hndl_max_score")
+    if isinstance(hndl_max, int):
+        score = calculate_hndl_risk(asset, sensitivity)
+        if score > hndl_max:
+            out.append(
+                _build_violation(
+                    asset=asset,
+                    rule="thresholds.hndl_max_score",
+                    expected=f"HNDL <= {hndl_max}",
+                    actual=f"HNDL = {score}",
+                    severity=RiskLevel.HIGH,
+                    remediation=(
+                        "Reduce HNDL exposure: shorten the confidentiality "
+                        "lifetime of data protected by this asset, or migrate "
+                        "to a quantum-resistant primitive (FIPS 203/204/205)."
+                    ),
+                )
+            )
+
+    qday_max = thresholds.get("qday_max_score")
+    if isinstance(qday_max, int):
+        score = calculate_qday_risk(asset)
+        if score > qday_max:
+            out.append(
+                _build_violation(
+                    asset=asset,
+                    rule="thresholds.qday_max_score",
+                    expected=f"Q-Day risk <= {qday_max}",
+                    actual=f"Q-Day risk = {score}",
+                    severity=RiskLevel.HIGH,
+                    remediation=(
+                        "Migrate this asset off classical primitives. The "
+                        "current Q-Day exposure exceeds the policy ceiling."
+                    ),
+                )
+            )
+
+    min_agility = thresholds.get("min_agility_score")
+    if isinstance(min_agility, int):
+        score = calculate_agility_score(asset)
+        if score < min_agility:
+            out.append(
+                _build_violation(
+                    asset=asset,
+                    rule="thresholds.min_agility_score",
+                    expected=f"agility >= {min_agility}",
+                    actual=f"agility = {score}",
+                    severity=RiskLevel.MEDIUM,
+                    remediation=(
+                        "Increase crypto-agility: remove hardcoded keys / "
+                        "cert pinning, introduce a configuration abstraction "
+                        "so the primitive can be swapped without redeploy."
+                    ),
+                )
+            )
+    return out
+
+
 _CHECKERS = (
     _check_forbidden_algos,
     _check_min_tls,
     _check_min_key_size,
     _check_signature_hash,
     _check_hybrid,
+    _check_discouraged_algorithms,
+    _check_thresholds,
 )
 
 

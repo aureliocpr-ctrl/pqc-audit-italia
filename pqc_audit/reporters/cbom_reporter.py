@@ -12,6 +12,7 @@ footprint minimal. Spec: https://cyclonedx.org/docs/1.6/json/
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from typing import Any
@@ -266,8 +267,14 @@ def _vulnerability_entry(report: AuditReport, vuln: Vulnerability) -> dict[str, 
     if not affects:
         # Always emit at least one affects entry to keep VEX consumers happy
         affects.append({"ref": "crypto:unknown"})
+    # Stable, deterministic 8-hex-digit suffix derived from the
+    # vulnerability title. Built-in ``hash()`` is randomized per
+    # Python interpreter (PEP 456 ``PYTHONHASHSEED``), so it would
+    # produce a different CBOM id every run and defeat any
+    # idempotent CBOM diffing / Dependency-Track ingestion.
+    title_digest = hashlib.sha256(vuln.title.encode("utf-8")).hexdigest()[:8]
     entry: dict[str, Any] = {
-        "id": f"PQC-{vuln.severity.name}-{abs(hash(vuln.title)) % 10**8}",
+        "id": f"PQC-{vuln.severity.name}-{title_digest}",
         "description": vuln.description,
         "ratings": [
             {
@@ -311,16 +318,22 @@ def render(report: AuditReport) -> str:
         "version": 1,
         "metadata": {
             "timestamp": report.generated_at.isoformat().replace("+00:00", "Z"),
-            "tools": {
-                "components": [
-                    {
-                        "type": "application",
-                        "vendor": _TOOL_VENDOR,
-                        "name": _TOOL_NAME,
-                        "version": __version__,
-                    }
-                ],
-            },
+            # CycloneDX 1.6 ``metadata.tools`` is ``oneOf`` (a) legacy
+            # array of Tool objects or (b) a ``{components, services}``
+            # object. We emit the legacy ARRAY form because it is
+            # accepted by every consumer in the wild (Dependency-Track
+            # 4.x and 5.x, cyclonedx-cli, Anchore, GitHub SBOM ingest)
+            # whereas the newer object form is still rejected by some
+            # strict validators in late-2025 fleets. The legacy form is
+            # not deprecated in 1.6, only marked as "consider migration
+            # to .components" in the spec.
+            "tools": [
+                {
+                    "vendor": _TOOL_VENDOR,
+                    "name": _TOOL_NAME,
+                    "version": __version__,
+                }
+            ],
             "component": {
                 "type": "application",
                 "bom-ref": f"audit:{report.report_id}",

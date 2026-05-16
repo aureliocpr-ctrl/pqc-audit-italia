@@ -397,6 +397,147 @@ def test_violation_severity_is_risklevel() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Discouraged algorithms (MEDIUM, sibling of forbidden_algorithms)
+# ---------------------------------------------------------------------------
+
+
+def test_discouraged_algorithm_emits_medium_violation() -> None:
+    """``discouraged_algorithms`` MUST surface as a MEDIUM violation
+    (not blocking, but visible)."""
+    from pqc_audit.core.models import RiskLevel
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "t",
+        "description": "t",
+        "discouraged_algorithms": ["RSA-2048"],
+    }
+    asset = _make_asset(name="RSA", key_size=2048, tls_version=None, sig_hash=None)
+    eval_ = evaluate_assets([asset], policy)
+    matches = [v for v in eval_.violations if v.rule == "discouraged_algorithms"]
+    assert matches, eval_.violations
+    assert matches[0].severity == RiskLevel.MEDIUM
+    assert "RSA-2048" in matches[0].actual
+
+
+def test_discouraged_algorithm_signature_hash_match() -> None:
+    """Discouraged signature hashes (like SHA-256 on a long-term PA
+    policy that prefers SHA-384) match via the asset metadata hash field."""
+    from pqc_audit.core.models import RiskLevel
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "t",
+        "description": "t",
+        "discouraged_algorithms": ["SHA-256"],
+    }
+    asset = _make_asset(name="ECDSA", key_size=384, curve="secp384r1", sig_hash="SHA-256")
+    eval_ = evaluate_assets([asset], policy)
+    matches = [v for v in eval_.violations if v.rule == "discouraged_algorithms"]
+    assert matches, eval_.violations
+    assert matches[0].severity == RiskLevel.MEDIUM
+
+
+def test_discouraged_does_not_overlap_with_forbidden_severity() -> None:
+    """An algorithm in BOTH forbidden + discouraged surfaces both
+    rules but the higher-severity forbidden one wins for the verdict."""
+    from pqc_audit.core.models import RiskLevel
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "t",
+        "description": "t",
+        "forbidden_algorithms": ["MD5"],
+        "discouraged_algorithms": ["MD5"],
+    }
+    asset = _make_asset(name="MD5", key_size=128, sig_hash=None)
+    eval_ = evaluate_assets([asset], policy)
+    severities = {v.severity for v in eval_.violations}
+    assert RiskLevel.HIGH in severities
+    assert RiskLevel.MEDIUM in severities
+
+
+# ---------------------------------------------------------------------------
+# Thresholds (hndl_max_score / qday_max_score / min_agility_score)
+# ---------------------------------------------------------------------------
+
+
+def test_thresholds_hndl_max_score_triggers_violation_on_rsa_2048() -> None:
+    """An RSA-2048 asset against a tight HNDL ceiling (10) must trip
+    the ``thresholds.hndl_max_score`` rule."""
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "tight",
+        "description": "tight",
+        "data_sensitivity_years": 30,
+        "thresholds": {"hndl_max_score": 10},
+    }
+    asset = _make_asset(name="RSA", key_size=2048, sig_hash=None)
+    eval_ = evaluate_assets([asset], policy)
+    hndl = [v for v in eval_.violations if v.rule == "thresholds.hndl_max_score"]
+    assert hndl, eval_.violations
+    assert "<= 10" in hndl[0].expected
+
+
+def test_thresholds_hndl_max_score_passes_when_quantum_resistant() -> None:
+    """ML-KEM-768 has tiny HNDL exposure → no threshold violation."""
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "tight",
+        "description": "tight",
+        "data_sensitivity_years": 30,
+        "thresholds": {"hndl_max_score": 10},
+    }
+    asset = _make_asset(name="ML-KEM-768", key_size=None, sig_hash=None)
+    eval_ = evaluate_assets([asset], policy)
+    assert not [v for v in eval_.violations if v.rule == "thresholds.hndl_max_score"]
+
+
+def test_thresholds_min_agility_score_triggers_on_hardcoded_keys() -> None:
+    """A hardcoded primitive (low crypto-agility) trips
+    ``thresholds.min_agility_score``."""
+    from pqc_audit.core.models import Algorithm, CryptoAsset, ScanCategory
+    from pqc_audit.policy_engine import evaluate_assets
+
+    asset = CryptoAsset(
+        asset_id="tls://stuck:443",
+        category=ScanCategory.NETWORK,
+        algorithm=Algorithm(name="ML-KEM-768"),
+        location="stuck:443",
+        discovered_at=_ts(),
+        metadata={"hardcoded": True, "cert_pinned": True},
+    )
+    policy = {
+        "name": "tight",
+        "description": "tight",
+        "thresholds": {"min_agility_score": 50},
+    }
+    eval_ = evaluate_assets([asset], policy)
+    agility = [v for v in eval_.violations if v.rule == "thresholds.min_agility_score"]
+    assert agility, eval_.violations
+
+
+def test_pa_critical_yaml_thresholds_actually_enforced() -> None:
+    """End-to-end: loading ``pa_critical`` and evaluating RSA-2048
+    must trip BOTH forbidden_algorithms AND thresholds.hndl_max_score.
+
+    Before fix 0.2.1 the engine silently ignored every ``thresholds.*``
+    key in every bundled YAML.
+    """
+    from pqc_audit.policies import load_policy
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = load_policy("pa_critical")
+    asset = _make_asset(name="RSA", key_size=2048, tls_version="TLSv1.3")
+    eval_ = evaluate_assets([asset], policy)
+    rules = {v.rule for v in eval_.violations}
+    assert "forbidden_algorithms" in rules
+    assert "thresholds.hndl_max_score" in rules
+
+
+# ---------------------------------------------------------------------------
 # Empty-asset guard
 # ---------------------------------------------------------------------------
 

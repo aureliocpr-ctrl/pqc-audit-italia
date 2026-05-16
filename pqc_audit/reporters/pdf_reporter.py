@@ -7,6 +7,13 @@ WeasyPrint is intentionally an *optional* dependency (extra ``[pdf]``).
 The import is lazy: the package itself works without weasyprint as long
 as the user does not invoke this reporter.
 
+Security note (CWE-918): the HTML payload may include user-controlled
+text (vulnerability descriptions, asset locations) that the optional
+``markdown`` package translates into ``<img src=...>``,
+``<a href=...>`` and similar. We block WeasyPrint from fetching any
+URL outside ``data:`` so a tainted AuditReport cannot turn the PDF
+render into an SSRF / local-file-read primitive.
+
 Typical usage::
 
     from pqc_audit.reporters.pdf_reporter import render
@@ -17,6 +24,7 @@ Typical usage::
 from __future__ import annotations
 
 from html import escape
+from typing import Any
 
 from pqc_audit import __version__
 from pqc_audit.core.models import AuditReport
@@ -184,6 +192,45 @@ def _inline(text: str) -> str:
     return "".join(out)
 
 
+def _no_network_fetcher(url: str) -> dict[str, Any]:
+    """WeasyPrint ``url_fetcher`` that refuses any non-``data:`` URL.
+
+    The audit report can contain attacker-controlled Markdown
+    (vulnerability descriptions, asset locations). The optional
+    ``markdown`` package translates ``![x](http://...)`` and similar
+    into HTML ``<img>``/``<link>`` nodes that WeasyPrint would happily
+    fetch via the default ``url_fetcher`` (HTTP and ``file://``). That
+    would turn rendering a PDF into an SSRF / local-file-read primitive
+    (CWE-918 / CWE-200).
+
+    Inline ``data:`` URIs are still allowed: they are a common way to
+    embed small inline icons and carry no network exposure.
+
+    Returns:
+        Dict shaped for WeasyPrint's ``url_fetcher`` contract when the
+        URL is an inline ``data:`` payload.
+
+    Raises:
+        ValueError: for any URL scheme other than ``data:``. WeasyPrint
+            surfaces this as a missing-resource warning and continues
+            rendering — the PDF is produced without the blocked
+            resource.
+    """
+    if url.startswith("data:"):
+        # Defer to WeasyPrint's own data: decoder so we don't have to
+        # reinvent base64 / urlencoded parsing here.
+        from weasyprint import (  # type: ignore[import-not-found,unused-ignore]  # noqa: I001, PLC0415
+            default_url_fetcher,
+        )
+
+        result: dict[str, Any] = default_url_fetcher(url)
+        return result
+    raise ValueError(
+        f"pqc-audit-italia: PDF reporter blocked external URL {url!r} "
+        "(only data: URIs are allowed; see SECURITY.md)."
+    )
+
+
 def _html_to_pdf(html: str) -> bytes:
     """Convert a complete HTML document to PDF bytes via WeasyPrint.
 
@@ -195,7 +242,7 @@ def _html_to_pdf(html: str) -> bytes:
         from weasyprint import HTML  # type: ignore[import-not-found,unused-ignore]  # noqa: PLC0415
     except ImportError as e:
         raise RuntimeError(_INSTALL_HINT) from e
-    pdf_bytes = HTML(string=html).write_pdf()
+    pdf_bytes = HTML(string=html, url_fetcher=_no_network_fetcher).write_pdf()
     if pdf_bytes is None:  # pragma: no cover - WeasyPrint guarantees bytes here
         raise RuntimeError("WeasyPrint returned no PDF bytes")
     return bytes(pdf_bytes)

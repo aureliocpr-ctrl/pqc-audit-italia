@@ -127,3 +127,44 @@ def test_report_pdf_to_stdout_errors(tmp_path: Path) -> None:
     src.write_text(_audit_report_json(), encoding="utf-8")
     result = runner.invoke(app, ["report", "--input", str(src), "--format", "pdf"])
     assert result.exit_code == 2
+
+
+def test_report_markdown_preserves_top_level_policy_evaluation(tmp_path: Path) -> None:
+    """Regression guard for the 06/05 MAJOR finding: a JSON report with
+    a top-level ``policy_evaluation`` (the convention used by ``scan
+    tls --enforce``) MUST re-render with the ``## Compliance`` section.
+
+    Before fix 0.2.1 ``_load_audit_report`` dropped the top-level
+    ``policy_evaluation`` and the Markdown reporter (which reads
+    ``metadata['policy_evaluation']``) silently emitted no compliance
+    block — the central ``--enforce → report --format markdown``
+    promise was broken with no test catching it.
+    """
+    src = tmp_path / "scan.json"
+    payload = json.loads(_audit_report_json())
+    payload["policy_evaluation"] = {
+        "overall_verdict": "FAIL",
+        "policy_name": "agid_2026",
+        "total_assets_evaluated": 1,
+        "compliant_assets": 0,
+        "non_compliant_assets": 1,
+        "violations": [
+            {
+                "asset_identifier": "tls://example.it:443",
+                "rule": "forbidden_algorithms",
+                "expected": "none of [RSA-2048]",
+                "actual": "RSA-2048",
+                "severity": "HIGH",
+                "remediation": "Migrate to ML-DSA-65",
+            }
+        ],
+    }
+    src.write_text(json.dumps(payload), encoding="utf-8")
+    result = runner.invoke(
+        app,
+        ["report", "--input", str(src), "--format", "markdown"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "## Compliance" in result.stdout
+    assert "FAIL" in result.stdout
+    assert "forbidden_algorithms" in result.stdout

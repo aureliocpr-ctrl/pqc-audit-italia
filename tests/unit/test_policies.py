@@ -50,6 +50,38 @@ def test_load_unknown_policy_raises() -> None:
         load_policy("does-not-exist")
 
 
+@pytest.mark.parametrize(
+    "evil_name",
+    [
+        "../../etc/foo",
+        "../etc/foo",
+        "..\\..\\etc\\foo",
+        "/etc/passwd",
+        "policy/with/slash",
+        "policy with space",
+        "policy.with.dot",
+        "",
+        "\x00malicious",
+        "policy;rm-rf",
+        "-leading-dash",
+        "_leading-underscore",
+    ],
+)
+def test_load_policy_rejects_path_traversal_and_invalid_names(evil_name: str) -> None:
+    """CWE-22 / CWE-73 guard: only the whitelisted name pattern is accepted.
+
+    ``load_policy`` MUST refuse anything that doesn't match
+    ``^[A-Za-z0-9][A-Za-z0-9_-]*$`` before opening any file. Without
+    this guard, an attacker controlling the ``--policy`` argument
+    (or the equivalent Python-API parameter) gets an arbitrary
+    ``*.yaml`` read primitive on the host.
+    """
+    from pqc_audit.policies import load_policy
+
+    with pytest.raises((ValueError, FileNotFoundError)):
+        load_policy(evil_name)
+
+
 @pytest.mark.parametrize("name", ["nist_baseline", "agid_2026", "banking_italy", "pa_critical"])
 def test_every_policy_has_references(name: str) -> None:
     from pqc_audit.policies import load_policy

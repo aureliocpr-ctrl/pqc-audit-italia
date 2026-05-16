@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pqc-audit-italia"
-version = "0.2.0"
+version = "0.2.1"
 description = "Crypto-discovery and crypto-agility audit toolkit for the Italian market (PA, SMB, financial sector). NIS2/DORA/AgID-aware."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -51,13 +51,17 @@ classifiers = [
 ]
 
 dependencies = [
-    "pydantic>=2.5",
-    "cryptography>=42.0",
-    "httpx>=0.27",
-    "structlog>=24.1",
-    "typer>=0.12",
-    "pyyaml>=6.0",
-    "rich>=13.7",
+    # Runtime deps are intentionally minimal: every entry below is
+    # actually imported by ``pqc_audit/``. ``httpx``, ``structlog`` and
+    # ``rich`` were removed in 0.2.1 because they were declared but
+    # never imported — they only inflated the supply-chain footprint.
+    # Pin upper bounds for libraries with a history of breaking minor
+    # bumps (pydantic, cryptography, pyyaml) so a transitive resolver
+    # can never pull in an untested major.
+    "pydantic>=2.5,<3.0",
+    "cryptography>=42.0,<46.0",
+    "typer>=0.12,<1.0",
+    "pyyaml>=6.0,<7.0",
 ]
 
 [project.optional-dependencies]
