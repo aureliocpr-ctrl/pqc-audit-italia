@@ -1,0 +1,103 @@
+# Audit Evidence Emit rule pack — 2026 edition
+#
+# This pack does not constrain WHICH algorithms are acceptable. It
+# mandates WHICH artifacts an auditor must produce alongside the
+# scan results so the output is auditable evidence under modern
+# supply-chain frameworks (SLSA, in-toto, CycloneDX, SARIF).
+#
+# Including this pack in a compile_rule_packs(...) call yields a
+# CompiledRuleSet with required_evidence_artifacts populated, which
+# the reporter layer uses to decide WHICH files to emit (and which
+# to sign).
+#
+# Schema: pqc_audit.rule_packs.schema.RulePack
+
+name: audit-evidence-emit-2026
+version: "2026.05.17"
+title: Audit Evidence Emission (CycloneDX 1.6 + SARIF + SLSA + in-toto)
+description: >
+  Mandatory evidence-artifact set for any audit run that needs to
+  withstand procurement, regulatory, or supply-chain scrutiny.
+  Each requirement maps to a specification version published in
+  2024-2025 and ingestable by Dependency-Track, GitHub Code
+  Scanning, and SLSA verifiers.
+
+effective_dates:
+  cyclonedx_1_6: 2024-04-09          # CycloneDX 1.6 release
+  sarif_2_1_0: 2020-03-27            # OASIS SARIF 2.1.0 final
+  slsa_v1_0: 2023-04-19              # SLSA v1.0 GA
+  in_toto_attestation_v1: 2023-06-13 # in-toto attestation format v1
+
+provenance:
+  source: OWASP / OASIS / OpenSSF
+  url: https://cyclonedx.org/docs/1.6/json/
+  retrieved: 2026-05-17
+
+applies_to:
+  asset_categories:
+    - tls
+    - ssh
+    - cert
+    - jwt
+    - saml
+    - mtls
+    - dnssec
+
+controls: []
+
+evidence_requirements:
+  - id: EV-CBOM-001
+    description: >
+      Emit a CycloneDX 1.6 Cryptography Bill of Materials covering
+      every discovered crypto-asset with primitive, parameterSet,
+      classicalSecurityLevel, and nistQuantumSecurityLevel fields.
+    artifact_type: cbom
+    format: cyclonedx-1.6
+    severity: HIGH
+    references:
+      - https://cyclonedx.org/docs/1.6/json/
+      - https://cyclonedx.org/capabilities/cbom/
+
+  - id: EV-SARIF-001
+    description: >
+      Emit a SARIF 2.1.0 result file so findings can be ingested by
+      GitHub Code Scanning, Azure DevOps and other SARIF-aware
+      platforms without translation.
+    artifact_type: sarif
+    format: sarif-2.1.0
+    severity: HIGH
+    references:
+      - https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
+
+  - id: EV-SLSA-001
+    description: >
+      Emit an SLSA v1.0 provenance attestation describing the build
+      and execution environment of the audit run (builder ID,
+      invocation, materials, byproducts).
+    artifact_type: slsa-provenance
+    format: slsa-v1.0
+    severity: HIGH
+    references:
+      - https://slsa.dev/spec/v1.0/provenance
+
+  - id: EV-INTOTO-001
+    description: >
+      Emit an in-toto attestation v1 binding the audit report to the
+      input scan targets via predicateType and subject digests.
+    artifact_type: in-toto-attestation
+    format: in-toto-v1
+    severity: MEDIUM
+    references:
+      - https://in-toto.io/Statement/v1
+      - https://github.com/in-toto/attestation
+
+  - id: EV-SIGNED-REPORT-001
+    description: >
+      Emit a detached signature over the canonical JSON report using
+      a sigstore keyless certificate or a customer-supplied key, so
+      downstream consumers can verify integrity and origin.
+    artifact_type: signed-report
+    format: sigstore-bundle-v0.3
+    severity: HIGH
+    references:
+      - https://docs.sigstore.dev/cosign/signing/signing_with_blobs/

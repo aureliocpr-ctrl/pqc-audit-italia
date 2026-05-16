@@ -106,7 +106,10 @@ packages = ["pqc_audit"]
 # Hatch by default ships only *.py inside Python packages. We need
 # the YAML policy files too — explicit include keeps them packaged
 # without triggering force-include duplicates.
-artifacts = ["pqc_audit/policies/*.yaml"]
+artifacts = [
+    "pqc_audit/policies/*.yaml",
+    "pqc_audit/rule_packs/*.yaml",
+]
 
 [tool.ruff]
 line-length = 100
