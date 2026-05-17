@@ -28,6 +28,174 @@ before being sent to a qualified service. Anything beyond that
 (qualified accreditation paperwork, eIDAS conformance assessment)
 sits outside this repository.
 
+## [Unreleased] — Sprint 9d.3 (root trust-anchor resolution + CA pedigree)
+
+Sprint 9d.3 (2026-05-17) answers the question every Italian PA audit
+actually cares about: **who is the trust anchor, and is it an
+AgID-accredited qualified TSP?** A TLS scan that names only the leaf
+and intermediates the server shipped is missing the load-bearing
+endpoint of the chain — and the legal effect (eIDAS art. 25) of every
+signature the CA underwrites hangs on it.
+
+### New module: `pqc_audit/scanners/tls_trust_store.py`
+
+Cross-platform resolver with a documented fallback chain for the
+trust store source:
+
+1. explicit `override` (caller-supplied PEM path);
+2. Linux/macOS system bundle via `ssl.get_default_verify_paths()`;
+3. Mozilla CA bundle via `certifi.where()` (Windows fallback);
+4. `("none", None)` — caller must surface unavailability honestly.
+
+We never call certifi "the Windows trust store" because it isn't.
+The returned label distinguishes `system_ca_bundle` from `certifi`,
+and the reporter is meant to disclose the source verbatim.
+
+### Canonical Name matching
+
+Real-world cross-signed chains (e.g. GTS Root R4 → GlobalSign Root
+CA) often encode the parent Name with a different RDN ordering, case,
+or whitespace than the bundle's stored copy. A literal
+`rfc4514_string()` match silently fails on those. The new
+`_name_to_key(name)` produces a stable canonical key:
+
+```
+sorted(f"{oid.dotted_string}={value.strip().lower()}" for attr in rdns)
+```
+
+Result: order-independent, case-insensitive, whitespace-trimmed.
+Verified against the GTS R4 / GlobalSign cross-sign case in
+`tests/unit/test_scanners_tls_trust_store.py::test_resolve_root_matches_across_rdn_order_and_case_and_whitespace`.
+
+### Pedigree classifier
+
+`classify_ca_pedigree(subject_dn)` returns one of:
+
+* `qualified_it_tsp` — AgID-accredited Italian qualified TSP
+  (substring patterns: aruba, infocert, namirial, poste, actalis,
+  trust italia, incertum, agid, buffetti). Pattern lists validated
+  against AgID TSL (https://eidas.agid.gov.it/TL/TSL-IT.xml) as of
+  2026-05-17. **NOT a complete catalogue** — a CA matching no IT
+  pattern is `unknown`, never silently bucketed as commercial.
+* `commercial_global` — well-known global commercial CAs (18
+  patterns: ISRG, Let's Encrypt, DigiCert, GlobalSign, Sectigo,
+  Comodo, GoDaddy, GeoTrust, Thawte, VeriSign, Entrust, IdenTrust,
+  Amazon, Google Trust Services, Microsoft, Buypass, Starfield,
+  QuoVadis).
+* `unknown` — neither. The audit-trail cost of mislabeling a
+  qualified TSP is too high to default to commercial.
+
+### Public API
+
+```python
+def resolve_root_from_chain(
+    chain: list[x509.Certificate],
+    trust_store: dict[str, x509.Certificate],
+) -> dict
+```
+
+Returns a 7-key dict:
+
+| key | type | meaning |
+|---|---|---|
+| `resolved` | bool | `True` iff root was found on-wire or in trust store |
+| `source` | str | `"on_wire"` / `"trust_store"` / `"unknown"` |
+| `root_subject` | str \| None | RFC 4514 string of the resolved root subject |
+| `root_signature_hash` | str \| None | e.g. `"SHA256"` |
+| `root_key_size` | int \| None | 4096 for ISRG, 2048 for older roots |
+| `root_algorithm` | str \| None | `"RSA"` / `"ECDSA"` / `"Ed25519"` / `"Ed448"` / `"DSA"` |
+| `pedigree` | str | `"qualified_it_tsp"` / `"commercial_global"` / `"unknown"` |
+
+### TLSScanner integration
+
+The leaf `CryptoAsset.metadata` now carries two additional stable
+keys:
+
+* `trust_anchor` — the full 7-key dict from `resolve_root_from_chain`;
+* `trust_store_source` — the label from `discover_trust_store_source`.
+
+The resolution runs once per scan, after `verify_chain_signatures`.
+No additional handshake; the trust store is read locally.
+
+### Test coverage
+
+22 unit tests in `tests/unit/test_scanners_tls_trust_store.py`,
+including:
+
+* `test_discover_returns_tuple_of_source_and_path`
+* `test_discover_picks_explicit_override_first`
+* `test_load_indexes_certs_by_subject_dn`
+* `test_load_handles_garbage_in_bundle` (interleaved comments + bogus
+  bytes between PEM blocks)
+* `test_load_returns_empty_on_missing_file`
+* 5x `test_classify_pedigree_qualified_it_tsp` (parametrized over
+  Aruba, InfoCert, Namirial, PosteCert, Actalis subjects)
+* 5x `test_classify_pedigree_commercial_global` (ISRG, DigiCert,
+  GlobalSign, Sectigo, Let's Encrypt)
+* `test_classify_pedigree_unknown`
+* `test_resolve_root_finds_in_trust_store` (qualified_it_tsp flow)
+* `test_resolve_root_when_last_cert_is_self_signed_uses_on_wire`
+* `test_resolve_root_not_found_in_trust_store_returns_unresolved`
+* `test_resolve_root_on_empty_chain_returns_unresolved`
+* `test_resolve_root_matches_across_rdn_order_and_case_and_whitespace`
+  (cross-sign canonical match)
+* `test_resolve_root_metadata_contains_required_keys` (schema
+  contract for callers)
+
+Full suite: 566 passed, 4 skipped (preexisting).
+Ruff: clean.
+
+### Empirical E2E on 6 endpoints
+
+| Host | source | resolved | root | pedigree |
+|---|---|---|---|---|
+| agid.gov.it | certifi | ✅ | ISRG Root X1 | commercial_global |
+| **aruba.it** | certifi | ✅ | Actalis Authentication Root CA | **qualified_it_tsp** |
+| digicert.com | certifi | ✅ | DigiCert Global Root G2 | commercial_global |
+| namirial.com | certifi | ✅ | Starfield Services Root CA G2 | commercial_global |
+| cloudflare.com | certifi | ❌ | — | unknown |
+| inps.it | certifi | ❌ | — | unknown |
+
+The **aruba.it → Actalis** resolution is the first production
+endpoint that classifies as `qualified_it_tsp` — the entire chain
+of motivation for this sprint. Note Namirial *as a TSP* would be
+qualified, but their *web site* (namirial.com) uses Starfield, not
+their own qualified root.
+
+### Honest gap list
+
+- **Cloudflare/INPS unresolved** is **not** a resolver bug: the
+  GlobalSign Root CA (1999 original, used to cross-sign GTS Root
+  R4) and INPS's CA are not present in the certifi 2024+ bundle.
+  On a machine with the Windows native trust store wired up
+  (`truststore` package's `SSLContext`), the resolution would
+  succeed. Future sprint: optional `truststore`-backed source.
+- **Pedigree lists are hand-curated subsets**, not the full
+  AgID TSL or EU LOTL. False-negatives possible for less common
+  qualified TSPs. Surface as a known limitation.
+- **No automatic trust-anchor cross-check** against AgID's TSL XML.
+  A future sprint could fetch and parse the TSL to confirm the
+  resolved root is currently in the active qualified list.
+- **Markdown reporter does not yet show trust anchor** — the data
+  is in the JSON `metadata.trust_anchor` block. Sprint 9d.4 will
+  add a dedicated section ("Trust anchor: Actalis Authentication
+  Root CA — pedigree: qualified_it_tsp (AgID)"), analogous to the
+  Sprint 9h-integration pattern.
+
+### Critic gate
+
+`critic-orchestrator` 3-worker adversarial review (222s, $2.39):
+
+| Worker | Verdict | Confidence | Note |
+|---|---|---|---|
+| falsification | claim_holds | 0.97 | Adapted stash procedure for the mixed tracked/untracked fix (new module + tracked scanner mod): moved untracked module out, `git stash push -- pqc_audit/scanners/tls_scanner.py`, ran tests, restored. **22/22 fail pre-fix** (`ModuleNotFoundError: pqc_audit.scanners.tls_trust_store`), **22/22 pass post-fix** in 3.76s. Genuine RED→GREEN. |
+| caller_verification | claim_holds | 0.95 | `resolve_root_from_chain` defined in `tls_trust_store.py:291`, imported in `tls_scanner.py:48`, called at `tls_scanner.py:872` inside `TLSScanner.scan`. Upward trace: `Auditor.scan` → `asyncio.run(auditor.scan([target]))` from every `pqc-audit` CLI scan subcommand (cli.py:108/149/169/192/221/252/281/312/346/389). Reachable via `pyproject.toml:111` entry point. |
+| counterexample | claim_holds | 0.78 | 6 invariants verified empirically: canonical Name match, garbage-tolerant PEM parser, three resolve outcomes, integration into leaf metadata. Edge cases probed and rejected: hypothetical "Trust Italia (VeriSign Company)" / "Sectigo Aruba RSA CA" — no real Mozilla bundle match. Italian-wins precedence is documented design. Per-scan trust-store reload is a performance concern, not correctness. No counterexample found. |
+
+**Consensus: hold 3-0-0.**
+
+---
+
 ## [Unreleased] — Sprint 9h-integration (NIS2 inline in executive Markdown)
 
 Sprint 9h-integration (2026-05-17) ships the user-facing payoff of

@@ -42,6 +42,11 @@ from pqc_audit.core.models import (
     Vulnerability,
 )
 from pqc_audit.scanners.base import ScanTarget
+from pqc_audit.scanners.tls_trust_store import (
+    discover_trust_store_source,
+    load_trust_store_subjects,
+    resolve_root_from_chain,
+)
 
 _SCANNER_NAME = "tls"
 
@@ -853,6 +858,18 @@ class TLSScanner:
                         r["verified"] for r in chain_verify_results
                         if r.get("verifiable", True)
                     )
+                    # Sprint 9d.3 — root trust-anchor resolution.
+                    # Probe the local trust store; if the issuer of the
+                    # last chain element is present, we can name the
+                    # root CA and classify its pedigree (qualified
+                    # Italian TSP / commercial global / unknown).
+                    trust_src, trust_path = discover_trust_store_source()
+                    trust_store = (
+                        load_trust_store_subjects(trust_path)
+                        if trust_path
+                        else {}
+                    )
+                    trust_anchor = resolve_root_from_chain(chain_certs, trust_store)
                     leaf_asset_id = f"tls://{target_repr}"
                     assets.append(
                         CryptoAsset(
@@ -884,6 +901,9 @@ class TLSScanner:
                                 "must_staple": leaf_revocation["must_staple"],
                                 # Sprint 9d.2 — chain cryptographic verify
                                 "chain_signatures_verified": chain_signatures_verified,
+                                # Sprint 9d.3 — root trust-anchor
+                                "trust_anchor": trust_anchor,
+                                "trust_store_source": trust_src,
                             },
                         )
                     )
