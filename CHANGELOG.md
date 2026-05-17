@@ -110,6 +110,24 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   guard, the malformed JSON path, and the live fetch via
   monkeypatch. 2 CLI tests for the subcommand wiring.
 
+### Tested — JWKS defense-in-depth coverage (Sprint 5 #4 critic follow-up)
+
+- `critic-orchestrator` adversarial review (job `dd90dffc32b766c2`,
+  3 workers, $2.37, 216 s) returned `consensus=claim_holds, votes
+  3-0-0`. The falsification worker flagged a "present-but-untested"
+  gap: `_NoRedirectHandler` and the 1 MiB `_MAX_JWKS_BYTES` cap had
+  no regression test. Closed the gap with seven new cases:
+    * Parametrized `test_no_redirect_handler_raises_on_every_3xx`
+      across status codes 301 / 302 / 303 / 307 / 308 — each must
+      raise `urllib.error.HTTPError`.
+    * `test_fetch_jwks_bytes_caps_oversize_response` mocks the
+      urllib opener to return a fake response whose `read()` produces
+      more than `_MAX_JWKS_BYTES` bytes, asserts `ValueError`.
+    * `test_fetch_jwks_bytes_rejects_http_non_2xx` mocks a 404
+      response, asserts `ValueError` mentioning the status code.
+- Total JWKS scanner tests now 33 (was 26). Full local suite: 410
+  passed, 3 skipped.
+
 ### Fixed — CI test suite green on ubuntu/macOS (Sprint 5 #1)
 
 - 8 pytest cases were failing on the Linux/macOS CI runners while

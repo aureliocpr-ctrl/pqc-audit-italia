@@ -15,6 +15,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -22,9 +24,11 @@ import pytest
 from pqc_audit.core.models import RiskLevel
 from pqc_audit.scanners.base import ScanTarget
 from pqc_audit.scanners.jwks_scanner import (
+    _MAX_JWKS_BYTES,
     JWKSScanner,
     _fetch_jwks_bytes,
     _is_public_host,
+    _NoRedirectHandler,
 )
 
 
@@ -236,3 +240,108 @@ def test_jwks_scanner_live_https_path_records_fetch_error(monkeypatch: pytest.Mo
     )
     assert result.assets == []
     assert any("could not fetch JWKS" in e for e in result.errors)
+
+
+# --- Defense-in-depth coverage (Sprint 5 #4 critic follow-up) -------
+# The critic-orchestrator falsification worker flagged two sub-claims
+# of the SSRF defense as "present-but-untested": the _NoRedirectHandler
+# rejection of 3xx responses and the 1 MiB response cap. The two tests
+# below close that coverage gap so a regression in either guard fails
+# CI loudly.
+
+
+@pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+def test_no_redirect_handler_raises_on_every_3xx(code: int) -> None:
+    """``_NoRedirectHandler.redirect_request`` must refuse every 3xx code.
+
+    The risk being defended: a JWKS endpoint returns ``302 Location:
+    http://internal/admin``. Without the handler, urllib would happily
+    follow the redirect — past the scheme + SSRF guards we just
+    enforced. With the handler, every 3xx is converted to an HTTPError
+    so the caller can surface it as a fetch failure.
+    """
+    handler = _NoRedirectHandler()
+    req = urllib.request.Request("https://example.com/jwks.json")
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        handler.redirect_request(
+            req,
+            fp=None,
+            code=code,
+            msg="Found",
+            headers={},  # type: ignore[arg-type]
+            newurl="http://169.254.169.254/latest/meta-data/",
+        )
+    assert "redirect refused" in str(exc_info.value)
+
+
+def test_fetch_jwks_bytes_caps_oversize_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Responses larger than _MAX_JWKS_BYTES must raise (CWE-400).
+
+    Patches the urllib opener with a fake whose ``open()`` returns a
+    fake response whose ``read(n)`` produces n bytes of garbage — so
+    ``read(_MAX_JWKS_BYTES + 1)`` returns _MAX_JWKS_BYTES + 1 bytes
+    and the size guard must trip.
+    """
+
+    class _FakeResponse:
+        status = 200
+
+        def getcode(self) -> int:
+            return 200
+
+        def read(self, n: int = -1) -> bytes:
+            # Return exactly the number of bytes requested so the
+            # response appears to be at least n bytes long.
+            size = _MAX_JWKS_BYTES + 1 if n < 0 else n
+            return b"\x00" * size
+
+        def __enter__(self) -> _FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:  # noqa: D401
+            return None
+
+    class _FakeOpener:
+        def open(self, req: object, timeout: float = 10.0) -> _FakeResponse:  # noqa: ARG002
+            return _FakeResponse()
+
+    def _fake_build_opener(*args: object, **kwargs: object) -> _FakeOpener:  # noqa: ARG001
+        return _FakeOpener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", _fake_build_opener)
+    # Bypass the SSRF resolution to keep the test offline.
+    monkeypatch.setattr("pqc_audit.scanners.jwks_scanner._is_public_host", lambda _h: True)
+    with pytest.raises(ValueError, match="exceeds .* bytes"):
+        _fetch_jwks_bytes("https://example.com/jwks.json")
+
+
+def test_fetch_jwks_bytes_rejects_http_non_2xx(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-2xx HTTP responses must surface as ValueError, not as parsed JWKS."""
+
+    class _FakeResponse:
+        status = 404
+
+        def getcode(self) -> int:
+            return 404
+
+        def read(self, n: int = -1) -> bytes:  # noqa: ARG002
+            return b"not found"
+
+        def __enter__(self) -> _FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:  # noqa: D401
+            return None
+
+    class _FakeOpener:
+        def open(self, req: object, timeout: float = 10.0) -> _FakeResponse:  # noqa: ARG002
+            return _FakeResponse()
+
+    monkeypatch.setattr(
+        urllib.request,
+        "build_opener",
+        lambda *a, **k: _FakeOpener(),  # noqa: ARG005
+    )
+    monkeypatch.setattr("pqc_audit.scanners.jwks_scanner._is_public_host", lambda _h: True)
+    with pytest.raises(ValueError, match="HTTP 404"):
+        _fetch_jwks_bytes("https://example.com/jwks.json")
