@@ -63,6 +63,7 @@ _KNOWN_TARGET_TYPES: frozenset[str] = frozenset(
         "postgres-ssl",
         "mysql-ssl",
         "smtp-starttls",
+        "imap-starttls",
         "pqc-hybrid",
     }
 )
@@ -72,6 +73,7 @@ _DEFAULT_PORT_BY_TYPE: dict[str, int] = {
     "postgres-ssl": 5432,
     "mysql-ssl": 3306,
     "smtp-starttls": 25,
+    "imap-starttls": 143,
     "pqc-hybrid": 443,
 }
 
@@ -203,6 +205,11 @@ def _build_scanners_for_target_type(target_type: str) -> list | None:
             SMTPStartTLSScanner,
         )
         return [SMTPStartTLSScanner()]
+    if t == "imap-starttls":
+        from pqc_audit.scanners.imap_starttls import (  # noqa: PLC0415
+            IMAPStartTLSScanner,
+        )
+        return [IMAPStartTLSScanner()]
     # tls / pqc-hybrid / pqc-mldsa-sig → fall back to Auditor default.
     return None
 

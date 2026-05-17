@@ -209,6 +209,11 @@ _TITLE_PATTERNS: tuple[tuple[re.Pattern[str], tuple[NIS2Article, ...]], ...] = (
         re.compile(r"smtp.*(?:starttls|not advertise)", re.IGNORECASE),
         (NIS2Article.ART_24_2_H, NIS2Article.ART_24_2_J),
     ),
+    # Sprint 9m — IMAP STARTTLS missing (RFC 2595).
+    (
+        re.compile(r"imap.*(?:starttls|not advertise)", re.IGNORECASE),
+        (NIS2Article.ART_24_2_H, NIS2Article.ART_24_2_J),
+    ),
 )
 
 

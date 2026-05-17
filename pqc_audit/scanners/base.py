@@ -32,6 +32,7 @@ TargetType = Literal[
     "postgres-ssl",
     "mysql-ssl",
     "smtp-starttls",
+    "imap-starttls",
 ]
 
 
@@ -51,6 +52,7 @@ _TYPE_TO_CATEGORY: dict[str, ScanCategory] = {
     "postgres-ssl": ScanCategory.DATABASE,
     "mysql-ssl": ScanCategory.DATABASE,
     "smtp-starttls": ScanCategory.NETWORK,
+    "imap-starttls": ScanCategory.NETWORK,
 }
 
 

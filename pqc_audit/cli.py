@@ -360,6 +360,45 @@ def scan_smtp_starttls_cmd(
     typer.echo(render_json(report, pretty=pretty))
 
 
+@scan_app.command("imap-starttls")
+def scan_imap_starttls_cmd(
+    host: str = typer.Option(..., "--host", help="IMAP server hostname or IP."),
+    port: int = typer.Option(143, "--port", help="TCP port (default: 143)."),
+    timeout: float = typer.Option(5.0, "--timeout", help="Socket timeout in seconds."),
+    raw: bool = typer.Option(
+        False, "--raw", help="Emit raw probe dict instead of full AuditReport."
+    ),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Probe IMAP for STARTTLS (RFC 2595) via passive CAPABILITY read.
+
+    Default: AuditReport with HIGH CWE-319 Vulnerability when
+    STARTTLS missing — auto-mapped to NIS2 / D.Lgs. 138/2024
+    art. 24(2)(h)+(j). ``--raw`` for probe-dict.
+    """
+    if raw:
+        from pqc_audit.scanners.imap_starttls import probe_imap_starttls  # noqa: PLC0415
+
+        result = probe_imap_starttls(host, port, timeout=timeout)
+        payload: dict = {
+            "host": host,
+            "port": port,
+            "probe": "imap-capability-starttls",
+            "reference": "https://datatracker.ietf.org/doc/html/rfc2595",
+            "result": result,
+        }
+        indent = 2 if pretty else None
+        typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
+        return
+
+    from pqc_audit.scanners.imap_starttls import IMAPStartTLSScanner  # noqa: PLC0415
+
+    auditor = Auditor(scanners=[IMAPStartTLSScanner()])
+    target = ScanTarget(type="imap-starttls", host=host, port=port)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
+
+
 @scan_app.command("certs")
 def scan_certs_cmd(
     path: str = typer.Option(
