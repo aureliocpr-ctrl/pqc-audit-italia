@@ -203,6 +203,12 @@ _TITLE_PATTERNS: tuple[tuple[re.Pattern[str], tuple[NIS2Article, ...]], ...] = (
         re.compile(r"mysql\s+allows\s+non-?ssl", re.IGNORECASE),
         (NIS2Article.ART_24_2_H, NIS2Article.ART_24_2_J),
     ),
+    # Sprint 9k — SMTP STARTTLS missing (RFC 3207). Same dual-citation
+    # as DB cleartext: (h) crittografia + (j) comunicazioni sicure.
+    (
+        re.compile(r"smtp.*(?:starttls|not advertise)", re.IGNORECASE),
+        (NIS2Article.ART_24_2_H, NIS2Article.ART_24_2_J),
+    ),
 )
 
 

@@ -316,6 +316,50 @@ def scan_mysql_ssl_cmd(
     typer.echo(render_json(report, pretty=pretty))
 
 
+@scan_app.command("smtp-starttls")
+def scan_smtp_starttls_cmd(
+    host: str = typer.Option(..., "--host", help="SMTP server hostname or IP."),
+    port: int = typer.Option(25, "--port", help="TCP port (default: 25 / 587 submission)."),
+    timeout: float = typer.Option(5.0, "--timeout", help="Socket timeout in seconds."),
+    raw: bool = typer.Option(
+        False, "--raw", help="Emit raw probe dict instead of full AuditReport."
+    ),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Probe SMTP for STARTTLS (RFC 3207) via passive EHLO capability read.
+
+    SMTP defaults to plaintext. A server that wants encryption
+    advertises STARTTLS in its EHLO response. The probe is purely
+    passive — connect, read banner, send EHLO, parse capabilities.
+    No TLS upgrade attempted.
+
+    Default: AuditReport with HIGH CWE-319 Vulnerability when
+    STARTTLS is missing — auto-mapped to NIS2 / D.Lgs. 138/2024
+    art. 24(2)(h)+(j). ``--raw`` for probe-dict.
+    """
+    if raw:
+        from pqc_audit.scanners.smtp_starttls import probe_smtp_starttls  # noqa: PLC0415
+
+        result = probe_smtp_starttls(host, port, timeout=timeout)
+        payload: dict = {
+            "host": host,
+            "port": port,
+            "probe": "smtp-ehlo-starttls",
+            "reference": "https://datatracker.ietf.org/doc/html/rfc3207",
+            "result": result,
+        }
+        indent = 2 if pretty else None
+        typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
+        return
+
+    from pqc_audit.scanners.smtp_starttls import SMTPStartTLSScanner  # noqa: PLC0415
+
+    auditor = Auditor(scanners=[SMTPStartTLSScanner()])
+    target = ScanTarget(type="smtp-starttls", host=host, port=port)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
+
+
 @scan_app.command("certs")
 def scan_certs_cmd(
     path: str = typer.Option(
