@@ -242,6 +242,72 @@ def test_tls_scanner_accepts_agid_tsl_data_and_invokes_enrich(monkeypatch) -> No
     assert len(result.errors) >= 1 or called["enriched"]
 
 
+def test_tls_scanner_actually_invokes_enrich_with_synthetic_handshake(monkeypatch) -> None:
+    """Closes the honest coverage gap disclosed in Sprint 9d.6 commit
+    008911c: the previous wiring test was satisfied via the
+    ConnectionRefusedError errors path without ever exercising the
+    enrich_with_tsl call. This test monkeypatches `_handshake` to
+    return a synthetic chain so the scan path actually reaches the
+    enrichment step and the spy is genuinely invoked."""
+    import asyncio
+
+    from cryptography.hazmat.primitives import serialization
+
+    from pqc_audit.scanners import tls_scanner, tls_trust_store
+    from pqc_audit.scanners.base import ScanTarget
+    from pqc_audit.scanners.tls_scanner import TLSScanner
+
+    # Build a 2-cert chain (leaf signed by intermediate) so chain
+    # validation has something coherent to parse.
+    root = _make_root_cert("Actalis Authentication Root CA", organization="Actalis")
+    # We need a leaf SIGNED by the root key. _make_root_cert returns
+    # only the cert, so build a single self-signed leaf for simplicity.
+    # The chain validation path tolerates a 1-element chain.
+    leaf_der = root.public_bytes(serialization.Encoding.DER)
+
+    async def fake_handshake(host, port, **kwargs):
+        return {
+            "der": leaf_der,
+            "chain_der": [leaf_der],
+            "version": "TLSv1.3",
+            "cipher": ("TLS_AES_256_GCM_SHA384", "TLSv1.3", 256),
+        }
+
+    monkeypatch.setattr(tls_scanner, "_handshake", fake_handshake)
+
+    called: dict[str, int] = {"count": 0}
+    real_enrich = tls_trust_store.enrich_with_tsl
+
+    def spy_enrich(metadata, tsl_data):
+        called["count"] += 1
+        return real_enrich(metadata, tsl_data)
+
+    monkeypatch.setattr(tls_trust_store, "enrich_with_tsl", spy_enrich)
+
+    tsl_data = {
+        "tsps": ["Actalis S.p.A."],
+        "qualified_certs": [leaf_der],
+    }
+    scanner = TLSScanner(agid_tsl_data=tsl_data)
+    target = ScanTarget(type="tls", host="synthetic.test", port=443)
+    result = asyncio.run(scanner.scan(target))
+
+    # The synthetic handshake must have produced at least one asset
+    # AND the spy must have observed exactly one enrich call (one
+    # chain → one trust-anchor enrichment).
+    assert len(result.assets) >= 1, f"expected synthetic chain to yield assets, errors={result.errors}"
+    assert called["count"] == 1, (
+        f"enrich_with_tsl spy was called {called['count']} times; "
+        f"errors={result.errors}"
+    )
+    # The leaf asset should carry the enriched trust_anchor metadata
+    # with verified_in_agid_tsl=True (Actalis cert IS in our fake TSL).
+    leaf = result.assets[0]
+    ta = leaf.metadata.get("trust_anchor", {})
+    assert ta.get("verified_in_agid_tsl") is True, ta
+    assert ta.get("pedigree") == "qualified_it_tsp_verified_via_tsl", ta
+
+
 def test_cli_scan_tls_accepts_agid_tsl_flag() -> None:
     """Smoke-test that the --agid-tsl flag exists on the CLI subcommand.
     We don't actually hit the network here — Typer's help-string
