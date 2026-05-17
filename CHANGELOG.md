@@ -69,6 +69,23 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   the CI gate `ruff format --check .`. No logic changes — purely
   whitespace / quote-style / line-break normalization.
 
+### Changed — dashboard enterprise polish (Sprint 4 #4)
+
+- `dashboard/src/styles.css`: refined Big4-style palette with auditor
+  navy/ivory/red, pill-shaped severity badges (no colored text so the
+  meaning survives colour-deficient viewing and print), gradient
+  sidebar, card hover micro-interactions, soft shadows, custom
+  scrollbar, monospace stack for `code` and algorithm cells.
+- `dashboard/src/App.tsx`: added a topbar with audit summary +
+  worst-severity pill, replaced colored severity text with proper
+  `<span class="badge severity-X">` pills in both tables, added a
+  sidebar tagline and offline-by-design footer to make the read-only
+  nature explicit for procurement reviewers.
+- Deliberate choice: NO Tailwind / shadcn / Radix dependency added —
+  the viewer ships as a Vite bundle ~5.6 kB CSS + 148 kB JS gzipped
+  to 47 kB, well within the airgap-friendly deliverable size target.
+- Vite build: clean (799 ms). TypeScript: strict mode green.
+
 ---
 
 ## Sprint 1-3 (global-grade transformation, tag v0.3.0-alpha1)
