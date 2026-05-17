@@ -1,0 +1,189 @@
+/* pqc-audit dashboard — minimal, Big4-inspired palette.
+ *
+ * Visual goals (Sprint 2 alpha):
+ *   * Print-friendly, no gimmick gradients.
+ *   * Dark sidebar so the table area stays focal.
+ *   * Sans-serif system stack, no webfont download.
+ *
+ * Sprint 3 will layer shadcn/ui on top; for the alpha we want zero
+ * extra deps until the data model and the IPC contract stabilise.
+ */
+
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #0f172a;
+  --ink-muted: #475569;
+  --brand: #002b5b;
+  --brand-accent: #0a4f9c;
+  --line: #d9e1ea;
+  --critical: #c1121f;
+  --high: #e76f51;
+  --medium: #f1a208;
+  --low: #2a9d8f;
+  --info: #5a6c7c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: var(--brand);
+  color: #e2e8f0;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.sidebar h1 {
+  font-size: 16px;
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.sidebar .version {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.sidebar button {
+  background: var(--brand-accent);
+  color: #fff;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.sidebar button:hover {
+  background: #135eba;
+}
+
+.sidebar .meta {
+  font-size: 12px;
+  opacity: 0.85;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  padding-top: 14px;
+  word-break: break-all;
+}
+
+.main {
+  padding: 28px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+
+.card .label {
+  font-size: 11px;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.card .value {
+  font-size: 22px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+section h2 {
+  font-size: 15px;
+  margin: 8px 0 12px;
+  color: var(--brand);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #eef2f7;
+  color: var(--ink-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+td.severity {
+  font-weight: 600;
+}
+
+td.severity.CRITICAL {
+  color: var(--critical);
+}
+td.severity.HIGH {
+  color: var(--high);
+}
+td.severity.MEDIUM {
+  color: var(--medium);
+}
+td.severity.LOW {
+  color: var(--low);
+}
+td.severity.INFO {
+  color: var(--info);
+}
+
+.empty {
+  color: var(--ink-muted);
+  font-style: italic;
+  padding: 18px 0;
+}
+
+.error {
+  color: var(--critical);
+  background: #fdecea;
+  border: 1px solid #f3c2bd;
+  border-radius: 4px;
+  padding: 12px 14px;
+  font-size: 12.5px;
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capabilities of the main window: open native file dialogs and invoke the load_report command. No filesystem access outside the dialog flow, no shell, no HTTP — by design.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "dialog:allow-open"
+  ]
+}

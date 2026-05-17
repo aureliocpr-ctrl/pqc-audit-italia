@@ -1,0 +1,18 @@
+# Node
+node_modules/
+dist/
+.vite/
+
+# Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# TypeScript build info
+*.tsbuildinfo
+# Vite config compiled by tsc -b (composite: true) — we don't ship them
+vite.config.js
+vite.config.d.ts
+
+# Editor / OS junk
+.DS_Store
+*.log
