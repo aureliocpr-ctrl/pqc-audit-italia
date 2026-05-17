@@ -41,16 +41,54 @@ from pqc_audit import Auditor, ScanTarget
 _ETLD_MIN_PARTS = 2  # eTLD+1 fallback needs ≥2 dot-separated tokens.
 _CSV_COL_PORT = 1  # CSV column index where ``port`` appears (if present).
 _CSV_COL_SCOPE = 2  # CSV column index where ``scope`` appears (if present).
+_CSV_COL_TYPE = 3  # CSV column index where ``type`` appears (if present, Sprint 9l).
 _HNDL_HIGH_THRESHOLD = 80  # HNDL ≥ this is treated as a "critical" row.
+
+# Sprint 9l — recognized target types beyond the default ``tls``.
+# Any prefix not in this set is treated as part of the host name and
+# the target falls back to ``tls`` (never raise on user input).
+#
+# v2 (post-critic): the set must be a STRICT SUBSET of
+# :data:`pqc_audit.scanners.base.TargetType` Literal AND every entry
+# must have either a default-stack scanner or an explicit one in
+# :func:`_build_scanners_for_target_type`. ``pqc-mldsa-sig`` was
+# removed because it has no Scanner class yet (it is a standalone
+# CLI subcommand that calls :func:`probe_all_mldsa_sigalgs` directly).
+# Listing it here would let users pass ``pqc-mldsa-sig://host`` in a
+# batch run, which would crash on ``ScanTarget(type='pqc-mldsa-sig')``
+# pydantic validation because the Literal does not allow it.
+_KNOWN_TARGET_TYPES: frozenset[str] = frozenset(
+    {
+        "tls",
+        "postgres-ssl",
+        "mysql-ssl",
+        "smtp-starttls",
+        "pqc-hybrid",
+    }
+)
+# Default ports per target type so users can omit the port column.
+_DEFAULT_PORT_BY_TYPE: dict[str, int] = {
+    "tls": 443,
+    "postgres-ssl": 5432,
+    "mysql-ssl": 3306,
+    "smtp-starttls": 25,
+    "pqc-hybrid": 443,
+}
 
 
 @dataclass(frozen=True)
 class Target:
-    """One TLS endpoint plus the scope label used for reporting."""
+    """One audit endpoint plus the scope label used for reporting.
+
+    Sprint 9l: ``target_type`` (default ``"tls"``) drives the dispatch
+    in :func:`run_one` so a single batch can mix TLS, Postgres SSL,
+    MySQL SSL, SMTP STARTTLS, and PQC hybrid / ML-DSA probes.
+    """
 
     host: str
     port: int = 443
     scope: str = ""
+    target_type: str = "tls"
 
     def resolved_scope(self) -> str:
         """Return ``scope`` if set, otherwise the eTLD+1 of ``host``."""
@@ -63,20 +101,41 @@ class Target:
 
 
 def parse_inline_targets(raw: str) -> list[Target]:
-    """Parse ``"host[:port], host[:port], ..."`` into a list of targets."""
+    """Parse comma-separated targets, optionally with ``type://`` prefix.
+
+    Accepted forms (Sprint 9l):
+
+    * ``host`` — default tls, default port 443
+    * ``host:port`` — default tls
+    * ``type://host`` — explicit type, default port for that type
+    * ``type://host:port`` — fully qualified
+
+    Unknown ``type`` prefixes (anything not in :data:`_KNOWN_TARGET_TYPES`)
+    are treated as part of the host name and the target falls back to
+    ``tls``. We never raise on user input.
+    """
     out: list[Target] = []
     for chunk in (s.strip() for s in raw.split(",")):
         if not chunk:
             continue
-        if ":" in chunk:
-            host, _, port_s = chunk.partition(":")
+        target_type = "tls"
+        remainder = chunk
+        if "://" in chunk:
+            prefix, _, after = chunk.partition("://")
+            if prefix.strip().lower() in _KNOWN_TARGET_TYPES:
+                target_type = prefix.strip().lower()
+                remainder = after
+        if ":" in remainder:
+            host, _, port_s = remainder.partition(":")
             try:
                 port = int(port_s)
             except ValueError:
-                port = 443
+                port = _DEFAULT_PORT_BY_TYPE.get(target_type, 443)
         else:
-            host, port = chunk, 443
-        out.append(Target(host=host.strip(), port=port))
+            host, port = remainder, _DEFAULT_PORT_BY_TYPE.get(target_type, 443)
+        out.append(
+            Target(host=host.strip(), port=port, target_type=target_type)
+        )
     return out
 
 
@@ -100,14 +159,52 @@ def parse_csv(path: Path) -> list[Target]:
             if cells[0].lower() in {"host", "hostname", "domain"}:
                 continue
             host = cells[0]
+            # Sprint 9l: optional 4th column ``type``. Unknown values
+            # fall back to ``tls`` silently — never raise on user input.
+            raw_type = (
+                cells[_CSV_COL_TYPE].lower()
+                if len(cells) > _CSV_COL_TYPE and cells[_CSV_COL_TYPE]
+                else "tls"
+            )
+            target_type = raw_type if raw_type in _KNOWN_TARGET_TYPES else "tls"
+            default_port = _DEFAULT_PORT_BY_TYPE.get(target_type, 443)
             port = (
                 int(cells[_CSV_COL_PORT])
                 if len(cells) > _CSV_COL_PORT and cells[_CSV_COL_PORT]
-                else 443
+                else default_port
             )
             scope = cells[_CSV_COL_SCOPE] if len(cells) > _CSV_COL_SCOPE else ""
-            out.append(Target(host=host, port=port, scope=scope))
+            out.append(
+                Target(host=host, port=port, scope=scope, target_type=target_type)
+            )
     return out
+
+
+def _build_scanners_for_target_type(target_type: str) -> list | None:
+    """Return the scanner stack appropriate for ``target_type``, or
+    ``None`` to let :class:`Auditor` use its default stack.
+
+    The default stack already covers ``tls`` and ``pqc-hybrid`` (see
+    :func:`pqc_audit.auditor.Auditor.__init__`). The Sprint 9j / 9k
+    scanners are NOT in the default stack — we wire them explicitly
+    here so the batch can drive them.
+    """
+    t = target_type.lower()
+    if t == "postgres-ssl":
+        from pqc_audit.scanners.postgres_ssl import (  # noqa: PLC0415
+            PostgresSSLScanner,
+        )
+        return [PostgresSSLScanner()]
+    if t == "mysql-ssl":
+        from pqc_audit.scanners.mysql_ssl import MySQLSSLScanner  # noqa: PLC0415
+        return [MySQLSSLScanner()]
+    if t == "smtp-starttls":
+        from pqc_audit.scanners.smtp_starttls import (  # noqa: PLC0415
+            SMTPStartTLSScanner,
+        )
+        return [SMTPStartTLSScanner()]
+    # tls / pqc-hybrid / pqc-mldsa-sig → fall back to Auditor default.
+    return None
 
 
 async def run_one(
@@ -123,8 +220,35 @@ async def run_one(
     minimal ``{host, port, error}`` payload so the batch never
     aborts because one host is unreachable.
     """
-    auditor = Auditor(policy=policy, data_sensitivity_years=sensitivity)
-    scan_target = ScanTarget(type="tls", host=target.host, port=target.port)
+    # Sprint 9l — dispatch by target_type so a single batch can mix
+    # tls / postgres-ssl / mysql-ssl / smtp-starttls / pqc-hybrid /
+    # pqc-mldsa-sig endpoints. Backward compatibility: target_type
+    # defaults to "tls" so pre-9l CSVs still work.
+    scanners = _build_scanners_for_target_type(target.target_type)
+    if scanners is None:
+        auditor = Auditor(policy=policy, data_sensitivity_years=sensitivity)
+    else:
+        auditor = Auditor(
+            policy=policy,
+            data_sensitivity_years=sensitivity,
+            scanners=scanners,
+        )
+    # Defense-in-depth (Sprint 9l v2): if _KNOWN_TARGET_TYPES ever
+    # drifts out of sync with the ScanTarget Literal, pydantic raises
+    # ValidationError here. Catch it as a per-host error so the batch
+    # never aborts, preserving the documented "batch never aborts"
+    # contract.
+    try:
+        scan_target = ScanTarget(
+            type=target.target_type, host=target.host, port=target.port
+        )
+    except Exception as exc:  # noqa: BLE001 — pydantic ValidationError + any future variant
+        return {
+            "host": target.host,
+            "port": target.port,
+            "target_type": target.target_type,
+            "error": f"unsupported target_type: {type(exc).__name__}: {exc}",
+        }
     try:
         report = await auditor.scan([scan_target])
     except Exception as exc:  # noqa: BLE001 — we intentionally swallow per host
