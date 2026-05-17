@@ -28,6 +28,105 @@ before being sent to a qualified service. Anything beyond that
 (qualified accreditation paperwork, eIDAS conformance assessment)
 sits outside this repository.
 
+## [Unreleased] — Sprint 9j.2 (MySQL / MariaDB SSL probe via passive handshake read)
+
+Sprint 9j.2 (2026-05-17) extends the database axis to MySQL /
+MariaDB. The protocol mechanic is different from PostgreSQL: the
+server speaks FIRST, sending an Initial Handshake Packet
+(Protocol::HandshakeV10) that advertises its capabilities. The
+``CLIENT_SSL`` bit (``0x0800``, bit 11) inside ``capability_flags_1``
+indicates SSL support.
+
+**The probe is purely passive** — no client request, no perturbation
+of server state, no possibility of disrupting an active production
+database. Just one TCP connect + one read.
+
+### New module: `pqc_audit/scanners/mysql_ssl.py`
+
+* `CLIENT_SSL_BIT = 0x0800` (constant, verified against MySQL docs).
+* `parse_handshake_v10_capabilities(payload)` — pure parser, returns
+  7-key dict (`ssl_status` / `error_message` / `protocol_version` /
+  `server_version` / `capability_flags` (int 32-bit) /
+  `capability_flags_hex` (lowercase) / `client_ssl_supported`).
+  Rejects v9 packets (obsolete) and truncated payloads with
+  `ssl_status="error"`.
+* `probe_mysql_ssl(host, port=3306, timeout=5.0)` — socket connect,
+  read 4-byte packet header (3-byte LE length + 1-byte seq),
+  drain N-byte payload, delegate to the parser. Catches
+  `ConnectionRefused` / `TimeoutError` / `gaierror` / `OSError`;
+  bounds the payload length at 16 KB to reject framing-error reads.
+
+Wire layout (verified against
+https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_connection_phase_packets_protocol_handshake_v10.html):
+
+```
+Packet header (4 bytes):
+  3 bytes payload-length (LE) + 1 byte sequence-id
+Payload (HandshakeV10):
+  1 byte    protocol_version (always 0x0a)
+  var       server_version (NUL-terminated)
+  4 bytes   thread_id
+  8 bytes   auth-plugin-data-part-1
+  1 byte    filler (0x00)
+  2 bytes   capability_flags_1 (low 16 bits, LE)  ← CLIENT_SSL HERE
+  1 byte    character_set
+  2 bytes   status_flags
+  2 bytes   capability_flags_2 (high 16 bits, LE)
+```
+
+### CLI wiring
+
+```
+pqc-audit scan mysql-ssl --host db.example.com --port 3306 --timeout 5.0
+```
+
+Output JSON: `host`, `port`, `probe = "mysql-handshake-v10-capability-flags"`,
+`reference` (dev.mysql.com docs URL), `result` (the 7-key parser dict
++ host + port).
+
+### Test coverage — real tests, not just monkeypatch
+
+* **11 unit tests**:
+  * 1 `CLIENT_SSL_BIT == 0x0800 == 2048` constant verification;
+  * 7 `parse_handshake_v10_capabilities` cases (extracts
+    `protocol_version` + `server_version`, SSL bit set/clear,
+    capability_flags reported as int and hex, rejects v9,
+    rejects truncated, rejects non-NUL-terminated server_version);
+  * 3 `probe_mysql_ssl` schema + error handling (refused, timeout,
+    gaierror).
+* **3 integration tests** with in-process mock TCP server (REAL
+  socket I/O, REAL handshake bytes, no monkeypatch):
+  * MySQL 8.0.36 with SSL → `ssl_status="supported"`;
+  * MySQL 5.7.42 with CLIENT_SSL bit explicitly cleared →
+    `ssl_status="not_supported"`;
+  * MariaDB 10.11.6 → CLI subcommand via CliRunner → valid JSON.
+
+Full suite: 622 passed, 4 skipped (preexisting).
+Ruff clean.
+
+### Audit value
+
+A MySQL/MariaDB server without `CLIENT_SSL` violates **NIS2 art.
+21(2)(h) / D.Lgs. 138/2024 art. 24(2)(h)** (encryption in transit
+for confidential data). This sprint emits the probe result; Sprint
+9j.3 will wire it into the `Auditor.scan` pipeline as a HIGH
+`Vulnerability(CWE-319, Cleartext Transmission)` so it propagates
+to the markdown report and NIS2 mapping automatically.
+
+### Critic gate
+
+`critic-orchestrator` 3-worker adversarial review (204s, $2.36):
+
+| Worker | Verdict | Confidence | Note |
+|---|---|---|---|
+| falsification | claim_holds | 0.97 | Stash module + CLI mod + test file (untracked), restored only test → `ImportError`. Restored everything → 14/14 pass in 2.75s, 88% coverage on `mysql_ssl.py`. |
+| caller_verification | claim_holds | 0.97 | `probe_mysql_ssl` invoked at `cli.py:244` inside `scan_mysql_ssl_cmd` decorated by `@scan_app.command("mysql-ssl")` at `cli.py:224`. Mount at `cli.py:60` + `pyproject.toml:111` console script `pqc-audit`. Real user reach: `pqc-audit scan mysql-ssl --host ... --port 3306`. |
+| counterexample | claim_holds | 0.88 | 8 invariants verified: CLIENT_SSL bit position, offset math post-server_version-NUL, capability_flags 32-bit LE concatenation, all error paths return `ssl_status="error"` without raise, `_read_n_bytes` handles TCP fragmentation, mock-server hermetic. Disclosed nitpick: `_error()` payload omits `protocol_version` key (schema asymmetry on network-error path) — not a counterexample because the claim does not promise uniform schema across all error paths. |
+
+**Consensus: hold 3-0-0.**
+
+---
+
 ## [Unreleased] — Sprint 9j (PostgreSQL SSL probe via wire protocol)
 
 Sprint 9j (2026-05-17) opens the **database** axis of the audit

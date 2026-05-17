@@ -221,6 +221,43 @@ def scan_postgres_ssl_cmd(
     typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
 
 
+@scan_app.command("mysql-ssl")
+def scan_mysql_ssl_cmd(
+    host: str = typer.Option(..., "--host", help="Hostname or IP of the MySQL/MariaDB server."),
+    port: int = typer.Option(3306, "--port", help="TCP port (default: 3306)."),
+    timeout: float = typer.Option(5.0, "--timeout", help="Socket timeout in seconds."),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Probe a MySQL / MariaDB endpoint for SSL support via passive handshake read.
+
+    MySQL servers speak first: on TCP connect they send the Initial
+    Handshake Packet (Protocol::HandshakeV10) which advertises
+    server capabilities. The CLIENT_SSL bit (0x0800, bit 11) inside
+    capability_flags_1 indicates whether the server supports
+    encrypted connections. The probe is purely passive — no client
+    request, no perturbation of server state.
+
+    Audit value: a server without CLIENT_SSL violates NIS2 art.
+    21(2)(h) / D.Lgs. 138/2024 art. 24(2)(h) on cleartext
+    transmission of confidential data.
+    """
+    from pqc_audit.scanners.mysql_ssl import probe_mysql_ssl  # noqa: PLC0415
+
+    result = probe_mysql_ssl(host, port, timeout=timeout)
+    payload: dict = {
+        "host": host,
+        "port": port,
+        "probe": "mysql-handshake-v10-capability-flags",
+        "reference": (
+            "https://dev.mysql.com/doc/dev/mysql-server/latest/"
+            "page_protocol_connection_phase_packets_protocol_handshake_v10.html"
+        ),
+        "result": result,
+    }
+    indent = 2 if pretty else None
+    typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
+
+
 @scan_app.command("certs")
 def scan_certs_cmd(
     path: str = typer.Option(
