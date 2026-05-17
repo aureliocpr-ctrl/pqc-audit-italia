@@ -52,9 +52,7 @@ def _run_one(concurrency: int, run_idx: int) -> dict[str, float | int]:
     elapsed = time.monotonic() - t0
     if proc.returncode != 0:
         sys.exit(f"batch failed (concurrency={concurrency}): {proc.stderr}")
-    payload = json.loads(
-        (out_subdir / "batch_report.json").read_text(encoding="utf-8")
-    )
+    payload = json.loads((out_subdir / "batch_report.json").read_text(encoding="utf-8"))
     ok = sum(1 for r in payload if "scan_results" in r)
     err = len(payload) - ok
     return {

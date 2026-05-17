@@ -155,9 +155,7 @@ def _vulnerabilities_for(alg_id: str, asset_id: str) -> list[Vulnerability]:
                 ),
                 severity=RiskLevel.HIGH,
                 cwe="CWE-327",
-                references=(
-                    "https://csrc.nist.gov/projects/hash-functions",
-                ),
+                references=("https://csrc.nist.gov/projects/hash-functions",),
                 affected_asset_ids=(asset_id,),
             )
         )
@@ -174,9 +172,7 @@ def _vulnerabilities_for(alg_id: str, asset_id: str) -> list[Vulnerability]:
                 ),
                 severity=RiskLevel.LOW,
                 cwe="CWE-321",
-                references=(
-                    "https://datatracker.ietf.org/doc/html/rfc8725#section-3.5",
-                ),
+                references=("https://datatracker.ietf.org/doc/html/rfc8725#section-3.5",),
                 affected_asset_ids=(asset_id,),
             )
         )
@@ -193,9 +189,7 @@ def _vulnerabilities_for(alg_id: str, asset_id: str) -> list[Vulnerability]:
                 ),
                 severity=RiskLevel.MEDIUM,
                 cwe="CWE-757",
-                references=(
-                    "https://www.iana.org/assignments/jose/jose.xhtml",
-                ),
+                references=("https://www.iana.org/assignments/jose/jose.xhtml",),
                 affected_asset_ids=(asset_id,),
             )
         )

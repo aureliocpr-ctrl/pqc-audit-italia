@@ -336,9 +336,7 @@ def test_compile_rule_packs_strict_overlays_classical_forbid() -> None:
     """
     from pqc_audit.rule_packs import compile_rule_packs
 
-    compiled = compile_rule_packs(
-        ["nist-core-2026", "fips-203-204-205-strict-2026"]
-    )
+    compiled = compile_rule_packs(["nist-core-2026", "fips-203-204-205-strict-2026"])
     assert "RSA-2048" in compiled.forbidden_algorithms
     # The lenient-only compile keeps RSA-2048 out of forbidden.
     lenient = compile_rule_packs(["nist-core-2026"])
@@ -359,8 +357,6 @@ def test_compile_rule_packs_eu_plus_italian_layered_compliance() -> None:
     )
     # Italian PA NIS2 + EU CRA + AGID procurement = the three legacy
     # primitives must all surface in the forbidden set.
-    assert {"MD5", "SHA-1", "RSA-1024", "3DES", "RC4"}.issubset(
-        compiled.forbidden_algorithms
-    )
+    assert {"MD5", "SHA-1", "RSA-1024", "3DES", "RC4"}.issubset(compiled.forbidden_algorithms)
     # ML-KEM-768 must remain explicitly allowed.
     assert "ML-KEM-768" in compiled.allowed_algorithms

@@ -104,9 +104,7 @@ def test_jwt_scanner_recognises_pqc_ml_dsa_65(tmp_path: Path) -> None:
     assert algo.name == "ML-DSA-65"
     # PQC algorithms are NOT flagged as critical/high — they are the
     # target state of the migration.
-    crit_high = [
-        v for v in result.vulnerabilities if v.severity >= RiskLevel.HIGH
-    ]
+    crit_high = [v for v in result.vulnerabilities if v.severity >= RiskLevel.HIGH]
     assert not crit_high
 
 

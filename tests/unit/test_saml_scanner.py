@@ -114,9 +114,7 @@ def test_saml_scanner_classifies_modern_rsa_sha256(tmp_path: Path) -> None:
 
 def test_saml_scanner_warns_on_aes_cbc_encryption(tmp_path: Path) -> None:
     result = _run_scan(tmp_path, _SAML_DEPRECATED_ENC)
-    medium_or_higher = [
-        v for v in result.vulnerabilities if v.severity >= RiskLevel.MEDIUM
-    ]
+    medium_or_higher = [v for v in result.vulnerabilities if v.severity >= RiskLevel.MEDIUM]
     assert any("CBC" in v.title for v in medium_or_higher)
 
 
@@ -130,8 +128,7 @@ def test_saml_scanner_blocks_xxe(tmp_path: Path) -> None:
 
 def test_saml_scanner_handles_no_signature(tmp_path: Path) -> None:
     content = (
-        '<?xml version="1.0"?>'
-        '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"/>'
+        '<?xml version="1.0"?><samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"/>'
     )
     result = _run_scan(tmp_path, content)
     assert result.assets == []

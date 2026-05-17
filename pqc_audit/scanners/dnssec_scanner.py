@@ -95,9 +95,7 @@ def _vulnerabilities_for(
                 ),
                 severity=RiskLevel.CRITICAL,
                 cwe="CWE-327",
-                references=(
-                    "https://datatracker.ietf.org/doc/html/rfc8624#section-3.1",
-                ),
+                references=("https://datatracker.ietf.org/doc/html/rfc8624#section-3.1",),
                 affected_asset_ids=(asset_id,),
             )
         )
@@ -117,9 +115,7 @@ def _vulnerabilities_for(
                 ),
                 severity=RiskLevel.HIGH,
                 cwe="CWE-327",
-                references=(
-                    "https://datatracker.ietf.org/doc/html/rfc8624#section-3.1",
-                ),
+                references=("https://datatracker.ietf.org/doc/html/rfc8624#section-3.1",),
                 affected_asset_ids=(asset_id,),
             )
         )
@@ -154,9 +150,7 @@ def _vulnerabilities_for(
                     "allocation to avoid interop drift once finalised."
                 ),
                 severity=RiskLevel.INFO,
-                references=(
-                    "https://datatracker.ietf.org/doc/draft-ietf-dnsop-dnssec-pqc/",
-                ),
+                references=("https://datatracker.ietf.org/doc/draft-ietf-dnsop-dnssec-pqc/",),
                 affected_asset_ids=(asset_id,),
             )
         )

@@ -118,9 +118,7 @@ def test_mtls_scanner_valid_chain_no_mtls_specific_findings(tmp_path: Path) -> N
     structural one. The mTLS scanner specifically must not add KU /
     EKU / chain / expiry findings to a clean chain.
     """
-    root_pem, root_key = _build_cert(
-        subject_cn="Root CA", issuer_cn="Root CA", is_ca=True
-    )
+    root_pem, root_key = _build_cert(subject_cn="Root CA", issuer_cn="Root CA", is_ca=True)
     leaf_pem, _ = _build_cert(
         subject_cn="client.example",
         issuer_cn="Root CA",
@@ -132,9 +130,7 @@ def test_mtls_scanner_valid_chain_no_mtls_specific_findings(tmp_path: Path) -> N
     result = _scan(chain_path)
     mtls_specific_keywords = ("clientAuth", "digitalSignature", "chain", "expired", "keyCertSign")
     mtls_findings = [
-        v
-        for v in result.vulnerabilities
-        if any(k in v.title for k in mtls_specific_keywords)
+        v for v in result.vulnerabilities if any(k in v.title for k in mtls_specific_keywords)
     ]
     assert not mtls_findings, (
         f"unexpected mTLS-structural findings: {[v.title for v in mtls_findings]}"
@@ -143,9 +139,7 @@ def test_mtls_scanner_valid_chain_no_mtls_specific_findings(tmp_path: Path) -> N
 
 
 def test_mtls_scanner_flags_missing_client_auth_eku(tmp_path: Path) -> None:
-    root_pem, root_key = _build_cert(
-        subject_cn="Root CA", issuer_cn="Root CA", is_ca=True
-    )
+    root_pem, root_key = _build_cert(subject_cn="Root CA", issuer_cn="Root CA", is_ca=True)
     # Leaf has NO EKU at all → no clientAuth.
     leaf_pem, _ = _build_cert(
         subject_cn="client.example",
@@ -161,9 +155,7 @@ def test_mtls_scanner_flags_missing_client_auth_eku(tmp_path: Path) -> None:
 
 
 def test_mtls_scanner_flags_missing_digital_signature_ku(tmp_path: Path) -> None:
-    root_pem, root_key = _build_cert(
-        subject_cn="Root CA", issuer_cn="Root CA", is_ca=True
-    )
+    root_pem, root_key = _build_cert(subject_cn="Root CA", issuer_cn="Root CA", is_ca=True)
     leaf_pem, _ = _build_cert(
         subject_cn="client.example",
         issuer_cn="Root CA",
@@ -181,9 +173,7 @@ def test_mtls_scanner_flags_missing_digital_signature_ku(tmp_path: Path) -> None
 def test_mtls_scanner_flags_chain_break(tmp_path: Path) -> None:
     # Build two unrelated chains and concatenate the wrong root.
     root_a_pem, _ = _build_cert(subject_cn="Root A", issuer_cn="Root A", is_ca=True)
-    root_b_pem, root_b_key = _build_cert(
-        subject_cn="Root B", issuer_cn="Root B", is_ca=True
-    )
+    root_b_pem, root_b_key = _build_cert(subject_cn="Root B", issuer_cn="Root B", is_ca=True)
     leaf_pem, _ = _build_cert(
         subject_cn="client.example",
         issuer_cn="Root B",
@@ -194,16 +184,12 @@ def test_mtls_scanner_flags_chain_break(tmp_path: Path) -> None:
     # Leaf was signed by Root B but the chain ships Root A.
     chain_path = _write_chain(tmp_path, [leaf_pem, root_a_pem])
     result = _scan(chain_path)
-    medium_or_higher = [
-        v for v in result.vulnerabilities if v.severity >= RiskLevel.MEDIUM
-    ]
+    medium_or_higher = [v for v in result.vulnerabilities if v.severity >= RiskLevel.MEDIUM]
     assert any("chain break" in v.title.lower() for v in medium_or_higher)
 
 
 def test_mtls_scanner_flags_rsa_1024(tmp_path: Path) -> None:
-    root_pem, root_key = _build_cert(
-        subject_cn="Root CA", issuer_cn="Root CA", is_ca=True
-    )
+    root_pem, root_key = _build_cert(subject_cn="Root CA", issuer_cn="Root CA", is_ca=True)
     leaf_pem, _ = _build_cert(
         subject_cn="client.example",
         issuer_cn="Root CA",
@@ -215,15 +201,13 @@ def test_mtls_scanner_flags_rsa_1024(tmp_path: Path) -> None:
     chain_path = _write_chain(tmp_path, [leaf_pem, root_pem])
     result = _scan(chain_path)
     high = [v for v in result.vulnerabilities if v.severity >= RiskLevel.HIGH]
-    assert any(
-        "1024" in v.title or "undersized" in v.title.lower() for v in high
-    ), f"expected undersized RSA finding, got: {[v.title for v in high]}"
+    assert any("1024" in v.title or "undersized" in v.title.lower() for v in high), (
+        f"expected undersized RSA finding, got: {[v.title for v in high]}"
+    )
 
 
 def test_mtls_scanner_flags_expired_leaf(tmp_path: Path) -> None:
-    root_pem, root_key = _build_cert(
-        subject_cn="Root CA", issuer_cn="Root CA", is_ca=True
-    )
+    root_pem, root_key = _build_cert(subject_cn="Root CA", issuer_cn="Root CA", is_ca=True)
     long_ago_start = datetime.now(UTC) - timedelta(days=400)
     long_ago_end = datetime.now(UTC) - timedelta(days=30)
     leaf_pem, _ = _build_cert(

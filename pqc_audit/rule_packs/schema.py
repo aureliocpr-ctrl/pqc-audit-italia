@@ -87,9 +87,7 @@ class Control(BaseModel):
 
     @field_validator("effective")
     @classmethod
-    def _effective_only_for_deprecate(
-        cls, v: date | None, info: object
-    ) -> date | None:
+    def _effective_only_for_deprecate(cls, v: date | None, info: object) -> date | None:
         # mypy-friendly: ValidationInfo is provided by pydantic v2 — we
         # don't import it to keep this file tiny. Cross-field validation
         # at model level (mode='after') would be cleaner but pydantic v2

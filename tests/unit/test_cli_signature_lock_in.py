@@ -28,16 +28,28 @@ runner = CliRunner(env={"COLUMNS": "200"})
 @pytest.mark.parametrize(
     "subcommand,required_options",
     [
-        (["batch", "--help"], ["--targets", "--csv", "--policy", "--enforce",
-                                "--concurrency", "--fail-on-violations", "--out"]),
-        (["batch-diff", "--help"], ["--before", "--after", "--out",
-                                     "--before-label", "--after-label"]),
-        (["scan", "tls", "--help"], ["--host", "--port", "--policy",
-                                       "--data-sensitivity-years", "--enforce"]),
-        (["scan", "certs", "--help"], ["--path", "--policy",
-                                         "--data-sensitivity-years"]),
-        (["scan", "ssh", "--help"], ["--host", "--port", "--policy",
-                                       "--data-sensitivity-years"]),
+        (
+            ["batch", "--help"],
+            [
+                "--targets",
+                "--csv",
+                "--policy",
+                "--enforce",
+                "--concurrency",
+                "--fail-on-violations",
+                "--out",
+            ],
+        ),
+        (
+            ["batch-diff", "--help"],
+            ["--before", "--after", "--out", "--before-label", "--after-label"],
+        ),
+        (
+            ["scan", "tls", "--help"],
+            ["--host", "--port", "--policy", "--data-sensitivity-years", "--enforce"],
+        ),
+        (["scan", "certs", "--help"], ["--path", "--policy", "--data-sensitivity-years"]),
+        (["scan", "ssh", "--help"], ["--host", "--port", "--policy", "--data-sensitivity-years"]),
         (["report", "--help"], ["--input", "--format", "--output"]),
         (["cbom", "--help"], ["--input", "--output"]),
     ],
@@ -67,6 +79,7 @@ def test_top_level_help_lists_all_subcommands() -> None:
 def test_version_flag_long_form() -> None:
     """``pqc-audit --version`` deve stampare la versione e uscire 0."""
     from pqc_audit import __version__
+
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
     assert __version__ in result.stdout
@@ -75,6 +88,7 @@ def test_version_flag_long_form() -> None:
 def test_version_flag_short_form() -> None:
     """``pqc-audit -V`` deve essere alias di --version."""
     from pqc_audit import __version__
+
     result = runner.invoke(app, ["-V"])
     assert result.exit_code == 0
     assert __version__ in result.stdout
@@ -83,6 +97,7 @@ def test_version_flag_short_form() -> None:
 def test_version_subcommand_still_works() -> None:
     """``pqc-audit version`` (subcomando legacy) resta supportato."""
     from pqc_audit import __version__
+
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
     assert __version__ in result.stdout

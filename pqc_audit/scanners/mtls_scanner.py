@@ -210,7 +210,9 @@ class MTLSScanner:
                         ),
                         severity=RiskLevel.CRITICAL,
                         cwe="CWE-298",
-                        references=("https://datatracker.ietf.org/doc/html/rfc5280#section-4.1.2.5",),
+                        references=(
+                            "https://datatracker.ietf.org/doc/html/rfc5280#section-4.1.2.5",
+                        ),
                         affected_asset_ids=(asset_id,),
                     )
                 )
@@ -283,7 +285,9 @@ class MTLSScanner:
                         ),
                         severity=RiskLevel.HIGH,
                         cwe="CWE-295",
-                        references=("https://datatracker.ietf.org/doc/html/rfc5280#section-4.2.1.9",),
+                        references=(
+                            "https://datatracker.ietf.org/doc/html/rfc5280#section-4.2.1.9",
+                        ),
                         affected_asset_ids=(asset_id,),
                     )
                 )
@@ -298,7 +302,9 @@ class MTLSScanner:
                         ),
                         severity=RiskLevel.HIGH,
                         cwe="CWE-295",
-                        references=("https://datatracker.ietf.org/doc/html/rfc5280#section-4.2.1.3",),
+                        references=(
+                            "https://datatracker.ietf.org/doc/html/rfc5280#section-4.2.1.3",
+                        ),
                         affected_asset_ids=(asset_id,),
                     )
                 )
