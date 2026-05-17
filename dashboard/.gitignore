@@ -16,3 +16,10 @@ vite.config.d.ts
 # Editor / OS junk
 .DS_Store
 *.log
+
+# Tauri build / bundle logs
+tauri-build.log
+tauri-build-bundle.log
+
+# Local viewer e2e test artifacts
+tmp_viewer/
