@@ -663,3 +663,92 @@ def test_policy_with_rule_packs_invalid_pack_name_raises() -> None:
     asset = _make_asset(name="RSA", key_size=2048, tls_version="TLSv1.3")
     with pytest.raises(FileNotFoundError):
         evaluate_assets([asset], policy)
+
+
+# ---------------------------------------------------------------------------
+# Sprint 7 — legal-value provenance: which rule packs (and which exact YAML
+# files, by content hash) drove the verdict. Without this, no auditor can
+# reproduce the audit weeks later, and no procurement reviewer can verify
+# that the bundled rule packs were not tampered with.
+# ---------------------------------------------------------------------------
+
+
+def test_policy_evaluation_exposes_rule_pack_provenance_when_packs_used() -> None:
+    """``rule_packs: [...]`` in the policy must surface as a structured
+    ``rule_pack_provenance`` field on the resulting :class:`PolicyEvaluation`.
+
+    Each entry pins: pack short-name, version string, source (NIST,
+    AGID, ACN, EU, ...), URL of the regulatory anchor, and the SHA-256
+    of the YAML file as shipped. The combination is what makes an audit
+    reproducible and legally auditable: a regulator can re-fetch the
+    same YAML from this repo at the same commit and hash-compare.
+    """
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "rp_provenance",
+        "description": "legal-value provenance",
+        "data_sensitivity_years": 10,
+        "rule_packs": ["nist-core-2026"],
+    }
+    rsa = _make_asset(name="RSA", key_size=2048, tls_version="TLSv1.3")
+    eval_ = evaluate_assets([rsa], policy)
+    prov = eval_.rule_pack_provenance
+    assert prov, "rule_pack_provenance is empty"
+    entry = next((p for p in prov if p.name == "nist-core-2026"), None)
+    assert entry is not None, [p.name for p in prov]
+    assert entry.version  # non-empty version string
+    assert entry.source == "NIST"
+    assert "csrc.nist.gov" in entry.url
+    # SHA-256 of the YAML file as shipped — 64 hex chars.
+    assert isinstance(entry.file_sha256, str)
+    assert len(entry.file_sha256) == 64
+    assert all(c in "0123456789abcdef" for c in entry.file_sha256)
+
+
+def test_policy_evaluation_provenance_is_stable_across_runs() -> None:
+    """Two evaluations of the same pack must produce the same content hash."""
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "rp_stable",
+        "description": "x",
+        "data_sensitivity_years": 10,
+        "rule_packs": ["nist-core-2026"],
+    }
+    asset = _make_asset(name="RSA", key_size=2048)
+    a = evaluate_assets([asset], policy)
+    b = evaluate_assets([asset], policy)
+    a_hash = next(p.file_sha256 for p in a.rule_pack_provenance if p.name == "nist-core-2026")
+    b_hash = next(p.file_sha256 for p in b.rule_pack_provenance if p.name == "nist-core-2026")
+    assert a_hash == b_hash, "rule pack hash drifted between runs — non-reproducible audit"
+
+
+def test_policy_evaluation_provenance_empty_when_no_rule_packs() -> None:
+    """Legacy policies with no ``rule_packs`` key must still load (empty list)."""
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "legacy",
+        "description": "no packs",
+        "forbidden_algorithms": ["MD5"],
+    }
+    eval_ = evaluate_assets([], policy)
+    assert eval_.rule_pack_provenance == []
+
+
+def test_policy_evaluation_provenance_distinct_packs_distinct_hashes() -> None:
+    """Different packs must yield different SHA-256 entries — sanity check."""
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "rp_two",
+        "description": "x",
+        "data_sensitivity_years": 10,
+        "rule_packs": ["nist-core-2026", "agid-absc-2026"],
+    }
+    eval_ = evaluate_assets([], policy)
+    by_name = {p.name: p.file_sha256 for p in eval_.rule_pack_provenance}
+    assert "nist-core-2026" in by_name
+    assert "agid-absc-2026" in by_name
+    assert by_name["nist-core-2026"] != by_name["agid-absc-2026"]

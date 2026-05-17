@@ -135,6 +135,26 @@ class PolicyViolation(BaseModel):
     remediation: str
 
 
+class RulePackProvenance(BaseModel):
+    """Legal-value provenance record for a rule pack that drove the verdict.
+
+    Sprint 7: a regulator or procurement reviewer must be able to
+    re-derive the audit's verdict weeks later. That requires pinning
+    not just the pack's short-name but also its declared ``version``,
+    the regulatory anchor URL it claims, and a SHA-256 of the YAML
+    file *as shipped* (so any silent edit between audits surfaces).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    version: str
+    source: str
+    url: str
+    retrieved: date
+    file_sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
 class PolicyEvaluation(BaseModel):
     """Aggregate result of evaluating a set of assets against a policy."""
 
@@ -148,6 +168,11 @@ class PolicyEvaluation(BaseModel):
     violations: list[PolicyViolation] = Field(default_factory=list)
     overall_verdict: str = "PASS"
     evaluated_at: datetime
+    # Sprint 7: per-pack provenance (name, version, source, URL, file
+    # hash) recorded at evaluation time. Empty for legacy policies
+    # that do not opt into ``rule_packs``. Loaded from the YAML on
+    # disk — drift between runs == regression test failure.
+    rule_pack_provenance: list[RulePackProvenance] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -507,15 +532,44 @@ def _compile_pack_overlay(policy: dict[str, Any]) -> dict[str, Any]:
     # Local import keeps policy_engine importable when rule_packs is
     # not vendored (e.g. minimal install). Suppressed PLC0415 for that
     # reason — the indirection is intentional, not laziness.
-    from pqc_audit.rule_packs import compile_rule_packs  # noqa: PLC0415
+    import hashlib  # noqa: PLC0415
 
-    compiled = compile_rule_packs([str(name) for name in pack_names])
+    from pqc_audit.rule_packs import (  # noqa: PLC0415
+        compile_rule_packs,
+        load_rule_pack,
+        rule_pack_file_path,
+    )
+
+    name_list = [str(name) for name in pack_names]
+    compiled = compile_rule_packs(name_list)
     merged = dict(policy)
     existing_forbid = {str(x) for x in merged.get("forbidden_algorithms") or []}
     existing_discourage = {str(x) for x in merged.get("discouraged_algorithms") or []}
     merged["forbidden_algorithms"] = sorted(existing_forbid | compiled.forbidden_algorithms)
     merged["discouraged_algorithms"] = sorted(existing_discourage | compiled.discouraged_algorithms)
     merged["_compiled_deprecate_after"] = dict(compiled.deprecate_after)
+
+    # Sprint 7: legal-value provenance — pin each pack's declared
+    # version + the SHA-256 of the YAML file as shipped. A regulator
+    # can re-fetch the same file from the same commit and hash-compare;
+    # any silent edit between audits will surface as a hash mismatch.
+    provenance_records: list[RulePackProvenance] = []
+    for pack_name in name_list:
+        pack = load_rule_pack(pack_name)
+        pack_path = rule_pack_file_path(pack_name)
+        file_bytes = pack_path.read_bytes()
+        sha = hashlib.sha256(file_bytes).hexdigest()
+        provenance_records.append(
+            RulePackProvenance(
+                name=pack.name,
+                version=pack.version,
+                source=pack.provenance.source,
+                url=pack.provenance.url,
+                retrieved=pack.provenance.retrieved,
+                file_sha256=sha,
+            )
+        )
+    merged["_rule_pack_provenance"] = provenance_records
     return merged
 
 
@@ -636,6 +690,11 @@ def evaluate_assets(
     non_compliant = len(non_compliant_ids)
     compliant = total - non_compliant
 
+    provenance_raw = policy.get("_rule_pack_provenance") or []
+    provenance: list[RulePackProvenance] = [
+        p for p in provenance_raw if isinstance(p, RulePackProvenance)
+    ]
+
     return PolicyEvaluation(
         policy_name=str(policy.get("name") or "unknown"),
         policy_description=str(policy.get("description") or ""),
@@ -645,6 +704,7 @@ def evaluate_assets(
         violations=violations,
         overall_verdict=_verdict(total, non_compliant),
         evaluated_at=datetime.now(UTC),
+        rule_pack_provenance=provenance,
     )
 
 

@@ -110,6 +110,40 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   guard, the malformed JSON path, and the live fetch via
   monkeypatch. 2 CLI tests for the subcommand wiring.
 
+### Added — rule pack provenance for legal-value audits (Sprint 7)
+
+The Sprint 6 integration made rule packs functionally enforceable.
+Sprint 7 makes the resulting audit **legally auditable** by pinning
+which exact pack drove every verdict.
+
+New pydantic model `RulePackProvenance` (name, version, source,
+url, retrieved, file_sha256). New field
+`PolicyEvaluation.rule_pack_provenance: list[RulePackProvenance]`.
+At evaluation time `_compile_pack_overlay()`:
+  * calls `load_rule_pack(name)` to read the declared
+    `version` + `provenance.{source,url,retrieved}`;
+  * reads the YAML file via the new traversal-safe public helper
+    `pqc_audit.rule_packs.rule_pack_file_path(name)` and computes
+    SHA-256 of the bytes as shipped.
+
+The combination (declared version + content hash) is the legal
+fingerprint: a regulator or PA procurement reviewer can re-fetch
+the file at the same commit and hash-compare. A silent edit
+between audits = hash mismatch = audit not reproducible.
+
+4 new tests pin the contract:
+  * `test_policy_evaluation_exposes_rule_pack_provenance_when_packs_used`
+    (presence + 64-hex SHA shape + NIST anchor URL).
+  * `test_policy_evaluation_provenance_is_stable_across_runs`
+    (two evaluations yield the same hash — no clock drift).
+  * `test_policy_evaluation_provenance_empty_when_no_rule_packs`
+    (legacy policies still work).
+  * `test_policy_evaluation_provenance_distinct_packs_distinct_hashes`
+    (two packs => two different SHAs).
+
+Total policy_engine tests: 40 (was 36). Full local suite: 419 pass,
+3 skip.
+
 ### Added — rule_packs ↔ policy_engine integration (Sprint 6)
 
 Before this commit the six bundled rule packs (`nist-core-2026`,

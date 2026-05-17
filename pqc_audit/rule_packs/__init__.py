@@ -51,6 +51,26 @@ def list_bundled_rule_packs() -> list[str]:
     return sorted(p.stem for p in _RULE_PACK_DIR.glob("*.yaml"))
 
 
+def rule_pack_file_path(name: str) -> Path:
+    """Return the resolved filesystem path of the YAML file for ``name``.
+
+    Sprint 7: needed by the policy engine to compute a content hash
+    (SHA-256) of the rule pack as shipped, so audits are reproducible
+    and legally auditable. Goes through the same traversal-safe
+    resolution as :func:`_load_raw`, so a hostile caller cannot
+    escape :data:`_RULE_PACK_DIR`.
+    """
+    _validate_name(name)
+    path = (_RULE_PACK_DIR / f"{name}.yaml").resolve()
+    try:
+        path.relative_to(_RULE_PACK_DIR.resolve())
+    except ValueError as exc:
+        raise FileNotFoundError(f"rule pack not found: {name}") from exc
+    if not path.is_file():
+        raise FileNotFoundError(f"rule pack not found: {name}")
+    return path
+
+
 def _validate_name(name: str) -> None:
     if not name or not _VALID_NAME_RE.fullmatch(name):
         raise ValueError(
@@ -142,4 +162,5 @@ __all__ = [
     "compile_rule_packs",
     "list_bundled_rule_packs",
     "load_rule_pack",
+    "rule_pack_file_path",
 ]
