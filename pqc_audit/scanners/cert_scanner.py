@@ -22,11 +22,11 @@ thing that differs is the asset id and category.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
 from pathlib import Path
 
 from cryptography import x509
 
+from pqc_audit.core.clock import frozen_now
 from pqc_audit.core.models import (
     CryptoAsset,
     ScanCategory,
@@ -122,7 +122,7 @@ def cert_to_asset(cert: x509.Certificate, source_path: Path) -> CryptoAsset:
         category=ScanCategory.FILESYSTEM,
         algorithm=alg,
         location=str(source_path),
-        discovered_at=datetime.now(UTC),
+        discovered_at=frozen_now(),
         key_material=km,
         metadata=metadata,
     )
@@ -186,7 +186,7 @@ class CertificateScanner:
         return target.type == "certs" and bool(target.path)
 
     async def scan(self, target: ScanTarget) -> ScanResult:
-        started = datetime.now(UTC)
+        started = frozen_now()
         assets: list[CryptoAsset] = []
         vulns: list[Vulnerability] = []
         errors: list[str] = []
@@ -199,7 +199,7 @@ class CertificateScanner:
         exists = await asyncio.to_thread(root.exists)
         if not exists:
             errors.append(f"path not found: {root}")
-            finished = datetime.now(UTC)
+            finished = frozen_now()
             return ScanResult(
                 scanner_name=self.name,
                 target=target_repr,
@@ -221,7 +221,7 @@ class CertificateScanner:
             if err is not None:
                 errors.append(err)
 
-        finished = datetime.now(UTC)
+        finished = frozen_now()
         return ScanResult(
             scanner_name=self.name,
             target=target_repr,

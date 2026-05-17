@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -44,6 +44,7 @@ from pqc_audit.core.algorithms import (
     AlgorithmClass,
     classify_algorithm,
 )
+from pqc_audit.core.clock import frozen_now
 from pqc_audit.core.models import (
     AuditReport,
     CryptoAsset,
@@ -583,7 +584,7 @@ def _evaluation_date(policy: dict[str, Any]) -> date:
             log.debug("policy_engine: invalid evaluation_date %r, using today", raw)
     if isinstance(raw, date):
         return raw
-    return datetime.now(UTC).date()
+    return frozen_now().date()
 
 
 def _check_deprecate_after(asset: CryptoAsset, policy: dict[str, Any]) -> list[PolicyViolation]:
@@ -703,7 +704,7 @@ def evaluate_assets(
         non_compliant_assets=non_compliant,
         violations=violations,
         overall_verdict=_verdict(total, non_compliant),
-        evaluated_at=datetime.now(UTC),
+        evaluated_at=frozen_now(),
         rule_pack_provenance=provenance,
     )
 

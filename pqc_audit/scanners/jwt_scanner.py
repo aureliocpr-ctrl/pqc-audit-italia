@@ -23,9 +23,9 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 
+from pqc_audit.core.clock import frozen_now
 from pqc_audit.core.models import (
     Algorithm,
     CryptoAsset,
@@ -210,7 +210,7 @@ class JWTScanner:
         if target.path is None:
             raise ValueError("JWT scanner requires target.path pointing to a token file")
 
-        started_at = datetime.now(UTC)
+        started_at = frozen_now()
         assets: list[CryptoAsset] = []
         vulns: list[Vulnerability] = []
         errors: list[str] = []
@@ -224,7 +224,7 @@ class JWTScanner:
                 assets=[],
                 vulnerabilities=[],
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=frozen_now(),
                 errors=errors,
             )
 
@@ -238,7 +238,7 @@ class JWTScanner:
                 assets=[],
                 vulnerabilities=[],
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=frozen_now(),
                 errors=errors,
             )
 
@@ -261,7 +261,7 @@ class JWTScanner:
                 category=ScanCategory.CONFIG,
                 algorithm=_algorithm_for(alg_id),
                 location=f"{path}:{line_no}",
-                discovered_at=datetime.now(UTC),
+                discovered_at=frozen_now(),
                 metadata={
                     "jose_alg": alg_id,
                     "kid": str(header.get("kid") or ""),
@@ -277,7 +277,7 @@ class JWTScanner:
             assets=assets,
             vulnerabilities=vulns,
             started_at=started_at,
-            finished_at=datetime.now(UTC),
+            finished_at=frozen_now(),
             errors=errors,
         )
 

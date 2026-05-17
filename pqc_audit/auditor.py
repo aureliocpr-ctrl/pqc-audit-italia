@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import UTC, datetime
 
 from pqc_audit.core.algorithms import (
     HYBRID_SCHEMES,
@@ -28,6 +27,7 @@ from pqc_audit.core.algorithms import (
     classify_algorithm,
     recommend_pqc_replacement,
 )
+from pqc_audit.core.clock import frozen_now, report_id_override
 from pqc_audit.core.models import (
     AuditReport,
     CryptoAsset,
@@ -250,10 +250,10 @@ class Auditor:
             results.extend(batch)
 
         raw_report = AuditReport(
-            report_id=f"audit-{uuid.uuid4().hex[:12]}",
+            report_id=report_id_override() or f"audit-{uuid.uuid4().hex[:12]}",
             scan_results=results,
             policy_name=self.policy,
-            generated_at=datetime.now(UTC),
+            generated_at=frozen_now(),
         )
         return enrich_report(raw_report, data_sensitivity_years=self.data_sensitivity_years)
 

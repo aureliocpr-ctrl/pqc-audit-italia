@@ -22,7 +22,6 @@ import asyncio
 import hashlib
 import socket
 import ssl
-from datetime import UTC, datetime
 from typing import Any
 
 from cryptography import x509
@@ -30,6 +29,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
 
 from pqc_audit.core.algorithms import AlgorithmClass, classify_algorithm, is_deprecated
+from pqc_audit.core.clock import frozen_now
 from pqc_audit.core.models import (
     Algorithm,
     CryptoAsset,
@@ -213,7 +213,7 @@ def assess_certificate(
     # inspect even broken certs). Without this check the report
     # would silently miss "the cert expired six months ago" — a
     # real-world failure mode in PA / banche legacy stacks.
-    now = datetime.now(UTC)
+    now = frozen_now()
     if km.not_after is not None and km.not_after < now:
         days_expired = (now - km.not_after).days
         vulns.append(
@@ -302,7 +302,7 @@ class TLSScanner:
         return target.type == "tls" and bool(target.host) and target.port is not None
 
     async def scan(self, target: ScanTarget) -> ScanResult:
-        started = datetime.now(UTC)
+        started = frozen_now()
         assets: list[CryptoAsset] = []
         vulns: list[Vulnerability] = []
         errors: list[str] = []
@@ -340,7 +340,7 @@ class TLSScanner:
         except Exception as e:  # noqa: BLE001 — surfaced to caller as a soft error
             errors.append(f"{type(e).__name__}: {e}")
 
-        finished = datetime.now(UTC)
+        finished = frozen_now()
         return ScanResult(
             scanner_name=self.name,
             target=target_repr,

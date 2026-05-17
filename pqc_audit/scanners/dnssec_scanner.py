@@ -14,9 +14,9 @@ draft-ietf-dnsop-dnssec-pqc reservations for ML-DSA.
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
 from pathlib import Path
 
+from pqc_audit.core.clock import frozen_now
 from pqc_audit.core.models import (
     Algorithm,
     CryptoAsset,
@@ -229,7 +229,7 @@ class DNSSECScanner:
         if target.path is None:
             raise ValueError("DNSSEC scanner requires target.path pointing to a zone file")
 
-        started_at = datetime.now(UTC)
+        started_at = frozen_now()
         assets: list[CryptoAsset] = []
         vulns: list[Vulnerability] = []
         errors: list[str] = []
@@ -243,7 +243,7 @@ class DNSSECScanner:
                 assets=[],
                 vulnerabilities=[],
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=frozen_now(),
                 errors=errors,
             )
 
@@ -257,7 +257,7 @@ class DNSSECScanner:
                 assets=[],
                 vulnerabilities=[],
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=frozen_now(),
                 errors=errors,
             )
 
@@ -279,7 +279,7 @@ class DNSSECScanner:
                 category=ScanCategory.CONFIG,
                 algorithm=algo,
                 location=f"{path}:{line_no}",
-                discovered_at=datetime.now(UTC),
+                discovered_at=frozen_now(),
                 metadata={
                     "dnssec_algorithm_number": str(algo_num),
                     "rfc8624_status": status,
@@ -294,7 +294,7 @@ class DNSSECScanner:
             assets=assets,
             vulnerabilities=vulns,
             started_at=started_at,
-            finished_at=datetime.now(UTC),
+            finished_at=frozen_now(),
             errors=errors,
         )
 

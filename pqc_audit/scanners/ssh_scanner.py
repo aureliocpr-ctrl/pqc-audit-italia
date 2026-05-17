@@ -31,10 +31,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import struct
-from datetime import UTC, datetime
 from typing import Any
 
 from pqc_audit.core.algorithms import AlgorithmClass, classify_algorithm
+from pqc_audit.core.clock import frozen_now
 from pqc_audit.core.models import (
     Algorithm,
     CryptoAsset,
@@ -470,7 +470,7 @@ class SSHScanner:
         return target.type == "ssh" and bool(target.host)
 
     async def scan(self, target: ScanTarget) -> ScanResult:
-        started = datetime.now(UTC)
+        started = frozen_now()
         host = target.host or ""
         port = int(target.port) if target.port is not None else _DEFAULT_PORT
         target_repr = f"{host}:{port}"
@@ -511,7 +511,7 @@ class SSHScanner:
         except Exception as exc:  # noqa: BLE001 — per-target soft error
             errors.append(f"{type(exc).__name__}: {exc}")
 
-        finished = datetime.now(UTC)
+        finished = frozen_now()
         return ScanResult(
             scanner_name=self.name,
             target=target_repr,

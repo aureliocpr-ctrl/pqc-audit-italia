@@ -110,6 +110,58 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   guard, the malformed JSON path, and the live fetch via
   monkeypatch. 2 CLI tests for the subcommand wiring.
 
+### Added — deterministic clock + report id for legally reproducible audits (Sprint 8 step C)
+
+Closes the end-to-end smoke finding from Sprint 8 step B: two
+back-to-back runs of the same scan on the same fixture were
+producing different SHA-256 fingerprints because `datetime.now(UTC)`
+and `uuid.uuid4()` were sprinkled across `AuditReport.generated_at`,
+`ScanResult.{started_at,finished_at}`, `CryptoAsset.discovered_at`,
+`PolicyEvaluation.evaluated_at`, and `report_id`.
+
+Two env vars now control determinism (defaults preserve the
+old ad-hoc behaviour):
+
+```
+PQC_AUDIT_FROZEN_AT=2026-05-17T12:00:00Z   # ISO 8601 UTC instant
+PQC_AUDIT_REPORT_ID=audit-<your-id>        # any non-empty string
+```
+
+New module `pqc_audit.core.clock` with two helpers:
+  * `frozen_now() -> datetime` — returns the env-frozen instant if
+    `PQC_AUDIT_FROZEN_AT` is set, else `datetime.now(UTC)`. Accepts
+    naive ISO (interpreted as UTC) and the `Z` short suffix.
+    Invalid value → warning + fall back to real now (auditor's run
+    continues but determinism is documented as lost).
+  * `report_id_override() -> str | None` — returns
+    `PQC_AUDIT_REPORT_ID` when non-empty, else `None`.
+
+Surgical replace of `datetime.now(UTC)` → `frozen_now()` across the
+11 modules that contribute timestamps to the canonical JSON
+(auditor + policy_engine + every scanner). `Auditor.scan` now
+honors `report_id_override()` before falling back to its random
+`audit-<hex>` default.
+
+12 new tests in `tests/unit/test_clock.py` (frozen_now + override
+contract, env-var name pinning, whitespace stripping, invalid-value
+fallback, two consecutive calls return identical value when frozen).
+
+Smoke E2E confirmation (this commit message):
+
+```
+PQC_AUDIT_FROZEN_AT=2026-05-17T12:00:00Z \
+PQC_AUDIT_REPORT_ID=audit-determ-001 \
+pqc-audit scan iac --path /fixture --compact > r.json
+pqc-audit hash --input r.json
+```
+
+Run twice, the two digests are bit-identical
+(`0f13eb92a17736dac1349ebe049a81a47bb14083ebab302598b3ec9cc597933b`).
+
+Total local tests: 449 passed, 3 skipped (was 444, +5 net after
+adding 7 frozen_now + 5 report_id_override = 12 minus the 7
+already present after Sprint 8c-prep).
+
 ### Added — `pqc-audit hash` CLI subcommand (Sprint 8 step B)
 
 New subcommand that closes the verification loop opened by step A.

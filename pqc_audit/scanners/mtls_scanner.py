@@ -22,13 +22,14 @@ yet break the security model.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from cryptography import x509
 from cryptography.x509.extensions import ExtensionNotFound
 from cryptography.x509.oid import ExtendedKeyUsageOID
 
+from pqc_audit.core.clock import frozen_now
 from pqc_audit.core.models import (
     CryptoAsset,
     RiskLevel,
@@ -91,7 +92,7 @@ def _is_ca(cert: x509.Certificate) -> bool:
 
 
 def _now_utc() -> datetime:
-    return datetime.now(UTC)
+    return frozen_now()
 
 
 def _validate_chain_links(certs: list[x509.Certificate]) -> list[str]:

@@ -21,13 +21,13 @@ Security note (CWE-611, CWE-776):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from defusedxml import ElementTree as DET  # type: ignore[import-untyped]
 from defusedxml.common import DefusedXmlException  # type: ignore[import-untyped]
 
+from pqc_audit.core.clock import frozen_now
 from pqc_audit.core.models import (
     Algorithm,
     CryptoAsset,
@@ -228,7 +228,7 @@ class SAMLScanner:
         if target.path is None:
             raise ValueError("SAML scanner requires target.path pointing to an XML file")
 
-        started_at = datetime.now(UTC)
+        started_at = frozen_now()
         assets: list[CryptoAsset] = []
         vulns: list[Vulnerability] = []
         errors: list[str] = []
@@ -242,7 +242,7 @@ class SAMLScanner:
                 assets=[],
                 vulnerabilities=[],
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=frozen_now(),
                 errors=errors,
             )
 
@@ -256,7 +256,7 @@ class SAMLScanner:
                 assets=[],
                 vulnerabilities=[],
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=frozen_now(),
                 errors=errors,
             )
         except Exception as e:
@@ -267,7 +267,7 @@ class SAMLScanner:
                 assets=[],
                 vulnerabilities=[],
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=frozen_now(),
                 errors=errors,
             )
 
@@ -286,7 +286,7 @@ class SAMLScanner:
                 category=ScanCategory.CONFIG,
                 algorithm=algo,
                 location=f"{path}:{local}",
-                discovered_at=datetime.now(UTC),
+                discovered_at=frozen_now(),
                 metadata={
                     "xml_local_name": local,
                     "algorithm_uri": uri,
@@ -320,7 +320,7 @@ class SAMLScanner:
             assets=assets,
             vulnerabilities=vulns,
             started_at=started_at,
-            finished_at=datetime.now(UTC),
+            finished_at=frozen_now(),
             errors=errors,
         )
 

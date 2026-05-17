@@ -29,9 +29,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
-from datetime import UTC, datetime
 from pathlib import Path
 
+from pqc_audit.core.clock import frozen_now
 from pqc_audit.core.models import (
     Algorithm,
     CryptoAsset,
@@ -278,7 +278,7 @@ def _scan_file(
                     category=ScanCategory.CODE,
                     algorithm=alg,
                     location=f"{path}:{line_no}",
-                    discovered_at=datetime.now(UTC),
+                    discovered_at=frozen_now(),
                     metadata={
                         "iac_file": str(rel),
                         "matched": match.group(0),
@@ -312,7 +312,7 @@ class IaCScanner:
         if target.path is None:
             raise ValueError("IaC scanner requires target.path pointing to a file or directory")
 
-        started_at = datetime.now(UTC)
+        started_at = frozen_now()
         path = Path(target.path)
         assets: list[CryptoAsset] = []
         vulns: list[Vulnerability] = []
@@ -326,7 +326,7 @@ class IaCScanner:
                 assets=[],
                 vulnerabilities=[],
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=frozen_now(),
                 errors=errors,
             )
 
@@ -342,7 +342,7 @@ class IaCScanner:
             assets=assets,
             vulnerabilities=vulns,
             started_at=started_at,
-            finished_at=datetime.now(UTC),
+            finished_at=frozen_now(),
             errors=errors,
         )
 

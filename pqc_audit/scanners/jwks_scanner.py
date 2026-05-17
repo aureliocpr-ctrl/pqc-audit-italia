@@ -43,10 +43,10 @@ import socket
 import ssl
 import urllib.error
 import urllib.request
-from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+from pqc_audit.core.clock import frozen_now
 from pqc_audit.core.models import (
     Algorithm,
     CryptoAsset,
@@ -345,7 +345,7 @@ class JWKSScanner:
         return target.type == "jwks"
 
     async def scan(self, target: ScanTarget) -> ScanResult:
-        started_at = datetime.now(UTC)
+        started_at = frozen_now()
         assets: list[CryptoAsset] = []
         vulns: list[Vulnerability] = []
         errors: list[str] = []
@@ -363,7 +363,7 @@ class JWKSScanner:
                 assets=assets,
                 vulnerabilities=vulns,
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=frozen_now(),
                 errors=errors,
             )
 
@@ -374,7 +374,7 @@ class JWKSScanner:
                 assets=assets,
                 vulnerabilities=vulns,
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=frozen_now(),
                 errors=errors,
             )
 
@@ -401,7 +401,7 @@ class JWKSScanner:
                         category=ScanCategory.NETWORK,
                         algorithm=_algorithm_for_jwk(jwk),
                         location=source_label,
-                        discovered_at=datetime.now(UTC),
+                        discovered_at=frozen_now(),
                         metadata={
                             "kid": kid,
                             "kty": str(jwk.get("kty") or ""),
@@ -418,7 +418,7 @@ class JWKSScanner:
             assets=assets,
             vulnerabilities=vulns,
             started_at=started_at,
-            finished_at=datetime.now(UTC),
+            finished_at=frozen_now(),
             errors=errors,
         )
 
