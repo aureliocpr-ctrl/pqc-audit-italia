@@ -756,6 +756,92 @@ def compliance_nis2_cmd(
         typer.echo(text)
 
 
+@compliance_app.command("agid-tsl")
+def compliance_agid_tsl_cmd(
+    fetch: bool = typer.Option(
+        True,
+        "--fetch/--no-fetch",
+        help="Fetch the live AgID TSL XML. Use --no-fetch with --input for offline parsing.",
+    ),
+    input_path: str | None = typer.Option(
+        None,
+        "--input",
+        "-i",
+        help="Path to a pre-fetched AgID TSL XML file. Implies --no-fetch.",
+    ),
+    subject: str | None = typer.Option(
+        None,
+        "--check-subject",
+        help="If set, verify this RFC 4514 subject DN against the qualified-CA list "
+        "and emit a single 'in_tsl' boolean.",
+    ),
+    timeout: float = typer.Option(30.0, "--timeout", help="HTTP timeout in seconds."),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Fetch and inspect the AgID Trusted List (ETSI TS 119 612).
+
+    The AgID TSL (https://eidas.agid.gov.it/TL/TSL-IT.xml) is the
+    authoritative roster of qualified Trust Service Providers in
+    Italy under eIDAS Regulation (EU) 910/2014.
+
+    Default: HTTPS GET the live TSL, parse, and emit JSON with the
+    full TSP name list + count of qualified-CA certificates.
+
+    With ``--check-subject "CN=...,O=...,C=IT"``: cross-check the
+    DN against the qualified-CA subjects in the TSL and report a
+    binary verdict (canonical Name match, RDN-order / case /
+    whitespace insensitive).
+
+    For offline use (no network), pass ``--input /path/to/tsl.xml``.
+    """
+    from pqc_audit.compliance.agid_tsl import (  # noqa: PLC0415
+        AGID_TSL_URL,
+        AgIDTSLFetchError,
+        AgIDTSLParseError,
+        fetch_agid_tsl,
+        is_subject_in_tsl,
+        parse_agid_tsl,
+    )
+
+    if input_path:
+        try:
+            xml_bytes = Path(input_path).read_bytes()
+        except OSError as exc:
+            typer.echo(f"error: cannot read --input: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        source = input_path
+    elif fetch:
+        try:
+            xml_bytes = fetch_agid_tsl(timeout=timeout)
+        except AgIDTSLFetchError as exc:
+            typer.echo(f"error: AgID TSL fetch failed: {exc}", err=True)
+            raise typer.Exit(code=3) from exc
+        source = AGID_TSL_URL
+    else:
+        typer.echo("error: pass --input <path> or --fetch", err=True)
+        raise typer.Exit(code=2)
+
+    try:
+        tsl_data = parse_agid_tsl(xml_bytes)
+    except AgIDTSLParseError as exc:
+        typer.echo(f"error: AgID TSL parse failed: {exc}", err=True)
+        raise typer.Exit(code=4) from exc
+
+    payload: dict = {
+        "source": source,
+        "tsp_count": len(tsl_data["tsps"]),
+        "qualified_ca_count": len(tsl_data["qualified_certs"]),
+        "tsps": tsl_data["tsps"],
+    }
+    if subject:
+        payload["check_subject"] = subject
+        payload["in_tsl"] = is_subject_in_tsl(subject, tsl_data)
+
+    indent = 2 if pretty else None
+    typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
+
+
+
 @app.command("cbom")
 def cbom_cmd(
     input_path: str = typer.Option(
