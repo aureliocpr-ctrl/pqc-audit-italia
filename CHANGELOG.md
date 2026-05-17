@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Scope note — what "audit reproducibility" means in this codebase
+
+The Sprint 7 + Sprint 8 work refers to **audit reproducibility and
+tamper-evidence**: a byte-stable canonical JSON, a SHA-256 fingerprint
+of the report, a SHA-256 fingerprint of every rule-pack YAML that
+drove the verdict, and frozen-clock + report-id env vars so two
+re-runs produce a bit-identical digest.
+
+This is the *technical* substrate. It is **not** by itself an eIDAS-
+qualified electronic seal, an AgID-accredited qualified timestamp, or
+a conformant *conservazione a norma* deliverable. Those statuses
+require external certified authorities (Aruba PEC, Namirial, Infocert,
+ETSI EN 319 421 TSAs, AgID-accredited conservation services). The
+output of this codebase is engineered to feed those pipelines
+unchanged — a regulator can detach the digest, hand it to a qualified
+TSA, and obtain a qualified timestamp token over it.
+
+Sprint 8 steps D + E add the bring-your-own signer hooks (RFC 3161
+client + sigstore keyless wrapper) so the report can be sealed
+before being sent to a qualified service. Anything beyond that
+(qualified accreditation paperwork, eIDAS conformance assessment)
+sits outside this repository.
+
 ## [Unreleased] — Sprint 4 (regulatory layer + security bump)
 
 Sprint 4 (2026-05-17, continued same day as Sprint 1-3) layers four
@@ -109,6 +132,64 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   169.254.169.254), the scheme guard, the both-host-and-path
   guard, the malformed JSON path, and the live fetch via
   monkeypatch. 2 CLI tests for the subcommand wiring.
+
+### Added — RFC 3161 Time-Stamp Protocol client (Sprint 8 step D)
+
+New module `pqc_audit.signing.tsa_client` with two pure-stdlib
+helpers:
+
+  * `build_timestamp_request(digest, hash_algo="sha256",
+    cert_req=True) -> bytes` — DER-encoded RFC 3161 §2.4.1
+    TimeStampReq. Hand-rolled ASN.1 (no pyasn1 / asn1crypto
+    dependency added) for SEQUENCE / INTEGER / OID / OCTET STRING
+    / BOOLEAN / NULL. Supports sha256 / sha384 / sha512.
+  * `request_timestamp_token(tsa_url, digest, ...) -> bytes` —
+    POSTs the request to a TSA endpoint over HTTPS, returns the
+    raw TimeStampResp body. Reuses the same security posture as
+    the JWKS scanner: HTTPS-only (CWE-918 scheme), SSRF guard
+    (refuses loopback / RFC1918 / link-local / multicast / AWS
+    metadata), 256 KiB response cap (CWE-400), full certificate +
+    hostname verification.
+
+What this module does NOT do (kept honest):
+  * It does NOT parse the TimeStampResp — the bundle is shipped
+    as an opaque blob to the verifier, who uses
+    `openssl ts -verify` or an equivalent library.
+  * It does NOT promise qualified status. ETSI EN 319 421 +
+    AgID accreditation are paperwork on top of this protocol;
+    out of scope for this codebase.
+
+**Interop verified empirically** with `openssl ts -query`:
+
+```
+$ openssl ts -query -in audit.tsq -text
+Version: 1
+Hash Algorithm: sha256
+Message data:
+    0000 - 9f 84 d2 e1 98 07 a5 89-bd 78 34 c4 04 eb 13 29
+    0010 - 9d 60 30 79 38 80 17 10-02 49 c9 0a f8 90 98 e3
+Policy OID: unspecified
+Nonce: unspecified
+Certificate required: yes
+```
+
+OpenSSL 3.5.5 (industry-standard reference implementation) parses
+the 59-byte DER blob without errors, recognises version 1,
+sha256, the embedded digest, and the certReq flag.
+
+10 new tests in `tests/unit/test_tsa_client.py`:
+  * DER starts with `0x30` (SEQUENCE),
+  * digest appears verbatim in the DER,
+  * cert_req flag changes the DER,
+  * digest length validation (32 bytes for sha256),
+  * unsupported hash algo rejected,
+  * Content-Type header is `application/timestamp-query`,
+  * non-https URL rejected,
+  * SSRF private host rejected (127.0.0.1, 169.254.169.254),
+  * non-2xx response raises,
+  * oversize response capped at 256 KiB.
+
+Total local tests: 459 / 3 skipped (was 449 / 3, +10 new).
 
 ### Added — deterministic clock + report id for legally reproducible audits (Sprint 8 step C)
 

@@ -18,7 +18,6 @@ in one helper, and consumed everywhere downstream.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
