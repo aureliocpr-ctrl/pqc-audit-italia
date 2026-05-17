@@ -110,6 +110,39 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   guard, the malformed JSON path, and the live fetch via
   monkeypatch. 2 CLI tests for the subcommand wiring.
 
+### Added — rule_packs ↔ policy_engine integration (Sprint 6)
+
+Before this commit the six bundled rule packs (`nist-core-2026`,
+`audit-evidence-emit-2026`, `eu-crypto-regulatory-2026`,
+`it-recepimento-nis2-2026`, `agid-absc-2026`,
+`fips-203-204-205-strict-2026`) were decorative: policies
+couldn't consume them. Now any policy YAML can opt in via:
+
+```yaml
+rule_packs:
+  - nist-core-2026
+  - it-recepimento-nis2-2026
+```
+
+At evaluation time `_compile_pack_overlay()` calls
+`compile_rule_packs([...])` and unions the resulting
+`forbidden_algorithms` / `discouraged_algorithms` into the effective
+policy (the caller's dict is never mutated). Unknown pack name →
+loud `FileNotFoundError` (no silent over-permissive verdict).
+
+New checker `_check_deprecate_after`: emits a HIGH severity
+violation when an asset's `Algorithm.canonical_name` matches a
+deprecate_after key whose effective date is `<=` today. Honors
+optional `evaluation_date: "2031-01-01"` policy field for point-
+in-time audits and deterministic tests.
+
+Schema additions to `_KNOWN_POLICY_KEYS`: `rule_packs`,
+`evaluation_date`. Tests: 5 new in `tests/unit/test_policy_engine.py`
+(merge forbid set, union with explicit list, deprecate_after post-
+date HIGH, deprecate_after pre-date no-op, invalid pack name
+raises). Total policy_engine tests: 36 (was 31). Full local
+suite: 415 passed, 3 skipped.
+
 ### Tested — JWKS defense-in-depth coverage (Sprint 5 #4 critic follow-up)
 
 - `critic-orchestrator` adversarial review (job `dd90dffc32b766c2`,

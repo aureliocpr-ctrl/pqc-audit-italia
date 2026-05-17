@@ -4,10 +4,18 @@ Evaluates an :class:`AuditReport` (or a flat list of
 :class:`CryptoAsset`) against a loaded policy dict and produces a
 structured :class:`PolicyEvaluation` with per-asset violations.
 
-The engine is a pure function: it does not perform I/O, does not
-mutate the inputs, and never raises on unknown policy fields (they
-are logged at DEBUG and ignored). This keeps it forward-compatible
-with new policy schema additions.
+The engine is a pure function with two exceptions:
+
+* It will *read* (never write) rule-pack YAML files when the policy
+  contains a ``rule_packs`` key — see :func:`_compile_pack_overlay`.
+  An unknown pack name fails loudly (``FileNotFoundError``); an
+  empty list is a noop.
+* It will perform ``datetime.now`` for ``deprecate_after`` checks
+  *unless* the policy supplies an ``evaluation_date`` (used by tests
+  and by point-in-time audits).
+
+Unknown policy keys are logged at DEBUG and ignored so YAML files can
+grow without breaking older code paths.
 
 Public API::
 
@@ -26,7 +34,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -75,6 +83,15 @@ _KNOWN_POLICY_KEYS: frozenset[str] = frozenset(
         # finalized at AgID/ACN level), but we accept the key so the
         # forward-compat warning stays quiet.
         "required_pqc_algorithms",
+        # Sprint 6: list of pack short-names (e.g. ``nist-core-2026``)
+        # whose compiled allow/forbid/discourage/deprecate_after sets
+        # are merged into the policy at evaluation time. See
+        # :func:`_compile_pack_overlay`.
+        "rule_packs",
+        # Sprint 6: optional ISO-8601 date overriding ``datetime.now``
+        # for ``deprecate_after`` checks. Useful for point-in-time
+        # audits and for tests that pin a synthetic clock.
+        "evaluation_date",
     }
 )
 
@@ -467,6 +484,98 @@ def _check_thresholds(asset: CryptoAsset, policy: dict[str, Any]) -> list[Policy
     return out
 
 
+def _compile_pack_overlay(policy: dict[str, Any]) -> dict[str, Any]:
+    """Merge the policy ``rule_packs`` overlay into a fresh dict.
+
+    Returns a new dict (the caller's policy is never mutated). The
+    overlay extends ``forbidden_algorithms`` / ``discouraged_algorithms``
+    with the union of the named packs' compiled sets, and stores the
+    compiled ``deprecate_after`` dict under the private key
+    ``_compiled_deprecate_after`` for :func:`_check_deprecate_after`
+    to consume.
+
+    Unknown pack names propagate the :class:`FileNotFoundError` from
+    :mod:`pqc_audit.rule_packs` so callers fail loudly at evaluation
+    instead of silently producing an over-permissive verdict.
+    """
+    pack_names = policy.get("rule_packs")
+    if not pack_names:
+        return policy
+    if not isinstance(pack_names, list):
+        log.debug("policy_engine: 'rule_packs' is not a list, ignoring")
+        return policy
+    # Local import keeps policy_engine importable when rule_packs is
+    # not vendored (e.g. minimal install). Suppressed PLC0415 for that
+    # reason — the indirection is intentional, not laziness.
+    from pqc_audit.rule_packs import compile_rule_packs  # noqa: PLC0415
+
+    compiled = compile_rule_packs([str(name) for name in pack_names])
+    merged = dict(policy)
+    existing_forbid = {str(x) for x in merged.get("forbidden_algorithms") or []}
+    existing_discourage = {str(x) for x in merged.get("discouraged_algorithms") or []}
+    merged["forbidden_algorithms"] = sorted(existing_forbid | compiled.forbidden_algorithms)
+    merged["discouraged_algorithms"] = sorted(existing_discourage | compiled.discouraged_algorithms)
+    merged["_compiled_deprecate_after"] = dict(compiled.deprecate_after)
+    return merged
+
+
+def _evaluation_date(policy: dict[str, Any]) -> date:
+    """Today, or the ``evaluation_date`` override from the policy."""
+    raw = policy.get("evaluation_date")
+    if isinstance(raw, str):
+        try:
+            return date.fromisoformat(raw)
+        except ValueError:
+            log.debug("policy_engine: invalid evaluation_date %r, using today", raw)
+    if isinstance(raw, date):
+        return raw
+    return datetime.now(UTC).date()
+
+
+def _check_deprecate_after(asset: CryptoAsset, policy: dict[str, Any]) -> list[PolicyViolation]:
+    """Emit a HIGH violation for an asset whose algorithm has reached its NIST IR
+    8547-style deprecation date.
+
+    The compiled deprecate map lives under ``_compiled_deprecate_after``
+    (populated by :func:`_compile_pack_overlay`). The check is a no-op
+    when no rule pack contributed a deprecation, or when the asset
+    algorithm does not match any deprecated key. Matching is on
+    :attr:`Algorithm.canonical_name` so RSA-2048 in the rule pack
+    matches an asset whose Algorithm(name='RSA', key_size_bits=2048).
+    """
+    deprecate_map = policy.get("_compiled_deprecate_after")
+    if not isinstance(deprecate_map, dict) or not deprecate_map:
+        return []
+    canonical = asset.algorithm.canonical_name
+    effective = deprecate_map.get(canonical)
+    if effective is None:
+        return []
+    if not isinstance(effective, date):
+        return []
+    today = _evaluation_date(policy)
+    if today < effective:
+        return []
+    return [
+        _build_violation(
+            asset=asset,
+            rule="deprecate_after",
+            expected=(
+                f"{canonical} deprecated by rule pack effective "
+                f"{effective.isoformat()} — migrate to a PQC primitive"
+            ),
+            actual=f"{canonical} still in use on {today.isoformat()}",
+            severity=RiskLevel.HIGH,
+            remediation=(
+                "An ingested rule pack flags this algorithm as deprecated for "
+                "new use after the effective date. Plan migration to a "
+                "FIPS-203/204/205 primitive (ML-KEM-768, ML-DSA-65, "
+                "SLH-DSA-SHA2-192s) or a hybrid scheme during the transition "
+                "window."
+            ),
+        )
+    ]
+
+
 _CHECKERS = (
     _check_forbidden_algos,
     _check_min_tls,
@@ -475,6 +584,7 @@ _CHECKERS = (
     _check_hybrid,
     _check_discouraged_algorithms,
     _check_thresholds,
+    _check_deprecate_after,
 )
 
 
@@ -503,9 +613,13 @@ def evaluate_assets(
 
     The policy dict is expected to be the merged output of
     :func:`pqc_audit.policies.load_policy`, but a hand-built dict
-    works too.
+    works too. If the policy contains a ``rule_packs`` list, the
+    named packs are compiled and their forbid / discourage /
+    deprecate_after sets are unioned into the effective policy
+    *for this evaluation only* (the caller's dict is never mutated).
     """
     _warn_unknown_keys(policy)
+    policy = _compile_pack_overlay(policy)
     asset_list = list(assets)
 
     violations: list[PolicyViolation] = []

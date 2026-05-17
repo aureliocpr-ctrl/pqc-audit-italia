@@ -552,3 +552,114 @@ def test_evaluate_assets_handles_empty_input(policy_name: str) -> None:
     eval_ = evaluate_assets([], load_policy(policy_name))
     assert eval_.total_assets_evaluated == 0
     assert eval_.overall_verdict == "PASS"
+
+
+# ---------------------------------------------------------------------------
+# Sprint 6 — rule_packs integration into policy_engine
+# ---------------------------------------------------------------------------
+
+
+def test_policy_with_rule_packs_merges_forbidden_set() -> None:
+    """A policy referencing rule_packs must inherit their forbidden_algorithms.
+
+    Before Sprint 6 the rule-pack YAMLs were decorative — policies
+    didn't consume them. This test pins the merge contract: ``{"rule_packs":
+    ["nist-core-2026"]}`` adds RSA-1024 / MD5 / SHA-1 / 3DES / RC4 to
+    the effective forbidden set the engine enforces.
+    """
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "rp_test",
+        "description": "rule-pack integration probe",
+        "data_sensitivity_years": 10,
+        "rule_packs": ["nist-core-2026"],
+    }
+    asset = _make_asset(name="MD5", key_size=128, tls_version="TLSv1.3")
+    eval_ = evaluate_assets([asset], policy)
+    forbidden = [v for v in eval_.violations if v.rule == "forbidden_algorithms"]
+    assert forbidden, eval_.violations
+    assert "MD5" in forbidden[0].actual
+
+
+def test_policy_with_rule_packs_unions_with_explicit_forbidden_list() -> None:
+    """Explicit ``forbidden_algorithms`` and rule-pack-derived ones MUST union, not overwrite."""
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "rp_test_union",
+        "description": "union semantics",
+        "data_sensitivity_years": 10,
+        "forbidden_algorithms": ["AES-128"],  # contrived, just to prove union
+        "rule_packs": ["nist-core-2026"],
+    }
+    # AES-128 — only from explicit list
+    aes = _make_asset(name="AES", key_size=128, tls_version="TLSv1.3")
+    md5 = _make_asset(name="MD5", key_size=128, tls_version="TLSv1.3")
+    eval_ = evaluate_assets([aes, md5], policy)
+    rules = [v.actual for v in eval_.violations if v.rule == "forbidden_algorithms"]
+    joined = " || ".join(rules)
+    assert "AES" in joined  # from explicit list
+    assert "MD5" in joined  # from rule pack
+
+
+def test_policy_with_rule_packs_emits_deprecate_after_violation_post_date() -> None:
+    """deprecate_after with effective <= today must surface as a HIGH violation."""
+    from pqc_audit.policy_engine import evaluate_assets
+
+    # nist-core-2026 deprecates RSA-2048 effective 2030-01-01.
+    # Test date is 2026-05-04 (see _ts()), so RSA-2048 is NOT yet
+    # past the deprecation. We use a per-test policy with an explicit
+    # _deprecate_after override in the past to force the rule.
+    policy = {
+        "name": "rp_deprecate_now",
+        "description": "post-date deprecation",
+        "data_sensitivity_years": 10,
+        "rule_packs": ["nist-core-2026"],
+        # The engine reads the compiled deprecate_after dict; for the
+        # post-date case we emulate by referencing a policy with
+        # current_date past 2030 in _evaluation_clock. Simpler: ship
+        # a synthetic pack via the public API would be heavier. We
+        # instead let the merge populate deprecate_after and inject
+        # a custom evaluation clock via the optional 'evaluation_date'
+        # policy field (also added in Sprint 6).
+        "evaluation_date": "2031-01-01",
+    }
+    rsa = _make_asset(name="RSA", key_size=2048, tls_version="TLSv1.3")
+    eval_ = evaluate_assets([rsa], policy)
+    deprecate = [v for v in eval_.violations if v.rule == "deprecate_after"]
+    assert deprecate, eval_.violations
+    assert "RSA-2048" in deprecate[0].actual
+    assert "2030" in deprecate[0].expected  # the effective date is mentioned
+
+
+def test_policy_with_rule_packs_does_not_emit_deprecate_after_before_date() -> None:
+    """deprecate_after with effective > today must NOT surface a violation."""
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "rp_deprecate_future",
+        "description": "pre-date deprecation",
+        "data_sensitivity_years": 10,
+        "rule_packs": ["nist-core-2026"],
+        "evaluation_date": "2026-05-04",  # before the 2030-01-01 line
+    }
+    rsa = _make_asset(name="RSA", key_size=2048, tls_version="TLSv1.3")
+    eval_ = evaluate_assets([rsa], policy)
+    deprecate = [v for v in eval_.violations if v.rule == "deprecate_after"]
+    assert not deprecate, "deprecate_after fired before its effective date"
+
+
+def test_policy_with_rule_packs_invalid_pack_name_raises() -> None:
+    """An unknown rule-pack name in a policy must fail loudly at evaluation."""
+    from pqc_audit.policy_engine import evaluate_assets
+
+    policy = {
+        "name": "rp_bad",
+        "description": "broken",
+        "data_sensitivity_years": 10,
+        "rule_packs": ["nope-2999"],
+    }
+    asset = _make_asset(name="RSA", key_size=2048, tls_version="TLSv1.3")
+    with pytest.raises(FileNotFoundError):
+        evaluate_assets([asset], policy)
