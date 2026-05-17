@@ -5,7 +5,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Status: Beta](https://img.shields.io/badge/status-beta-yellow)](#roadmap)
-[![Tests: 661 green](https://img.shields.io/badge/tests-661%20green-success)](#development)
+[![Tests: 695 green](https://img.shields.io/badge/tests-695%20green-success)](#development)
 [![Coverage 90%](https://img.shields.io/badge/coverage-90%25-success)](#development)
 [![Ruff zero](https://img.shields.io/badge/ruff-zero-success)](#development)
 [![Mypy strict](https://img.shields.io/badge/mypy-strict-success)](#development)
@@ -174,6 +174,17 @@ pqc-audit scan postgres-ssl --host db.example.it --port 5432
 
 # MySQL / MariaDB SSL via passive Initial Handshake v10 read.
 pqc-audit scan mysql-ssl --host db.example.it --port 3306
+
+# SMTP STARTTLS (RFC 3207) — passive EHLO capability read.
+pqc-audit scan smtp-starttls --host mx.example.it --port 25
+
+# Batch portfolio scan with MIXED target types (Sprint 9l).
+# CSV format: host,port,scope,type — type column is optional;
+# unknown values silently fall back to tls.
+pqc-audit batch --csv examples/targets_mixed.csv --concurrency 4
+
+# Inline syntax with type:// prefix.
+pqc-audit batch --targets "postgres-ssl://db.example.it:5432,smtp-starttls://mx.example.it:25"
 ```
 
 ### Re-render reports

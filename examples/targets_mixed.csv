@@ -1,0 +1,8 @@
+host,port,scope,type
+aruba.it,443,banking-it,tls
+agid.gov.it,443,pa-italia,tls
+db.example.it,5432,db-prod,postgres-ssl
+mysql.example.it,3306,db-prod,mysql-ssl
+mx.example.it,25,mail-prod,smtp-starttls
+mx.example.it,587,mail-submission,smtp-starttls
+cloudflare.com,443,pqc-readiness,pqc-hybrid
