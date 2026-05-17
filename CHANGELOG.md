@@ -28,6 +28,109 @@ before being sent to a qualified service. Anything beyond that
 (qualified accreditation paperwork, eIDAS conformance assessment)
 sits outside this repository.
 
+## [Unreleased] — Sprint 9d (TLS chain validation)
+
+Sprint 9d (2026-05-17) extends the TLS scanner from leaf-only to
+**full-chain** introspection: every certificate the server sends on
+the wire (leaf + intermediates + optional root) is parsed, classified
+by structural position, surfaced as its own `CryptoAsset`, and
+assessed individually for crypto weaknesses.
+
+### Why this matters for a real audit
+
+A leaf-only auditor misses **chain-wide weaknesses** that browsers,
+ETSI, and CA/B Forum care about:
+
+- An **RSA-1024 intermediate** in the chain breaks the security of an
+  otherwise pristine ECDSA-P-256 leaf — the auditor must see both.
+- A **SHA-1 signed intermediate or root** is a hard CA/B Forum
+  retirement (>2017). Surfacing it in the SARIF/CBOM lets compliance
+  teams find legacy stacks before browsers do.
+- An **incomplete chain** (server forgets to ship intermediates) is
+  the single most common AgID/PA TLS misconfiguration — silently
+  works in Chrome (AIA chasing) but fails on hardened clients.
+- Knowing **whether the chain terminates at a self-signed root** vs.
+  a public CA intermediate is the eIDAS-relevant pedigree question:
+  Let's Encrypt → ISRG vs. a qualified CA (Aruba, Namirial, Infocert)
+  → AgID-accredited root.
+
+### Added
+
+- `pqc_audit.scanners.tls_scanner.classify_chain_positions(chain)` —
+  pure helper that labels each cert in leaf-first order as
+  `leaf` | `intermediate-N` | `root`. The `root` label is reserved
+  for a last cert whose `subject == issuer` (TLS rarely ships the
+  root on the wire — Let's Encrypt agid.gov.it 2026-05 chain is
+  `[leaf, E7 intermediate]`, confirmed empirically).
+- `pqc_audit.scanners.tls_scanner.extract_chain_summary(chain)` —
+  CBOM/SARIF-ready dict (`chain_length`, `terminates_at_root`,
+  `positions`, `subjects`, `issuers`, `signature_hashes`, plus per-
+  cert `algorithms`). Stable schema contract for reporters.
+- `pqc_audit.scanners.tls_scanner.assess_chain(chain, leaf_asset_id)` —
+  per-cert vulnerability findings keyed to position-suffixed asset
+  ids (`tls://host:port#intermediate-1`). Leaf is NOT re-assessed to
+  avoid double-reporting. Adds a chain-wide LOW finding when the
+  server presents only a non-self-signed leaf (incomplete chain).
+- `TLSScanner.scan` now emits one `CryptoAsset` per chain element:
+  the leaf retains its canonical `tls://host:port` id (back-compat
+  for existing dashboards / pivots); intermediates and roots get
+  `#intermediate-N` / `#root` suffixes. The leaf asset carries a
+  `chain_length` + `terminates_at_root` + `chain_signature_hashes`
+  + `chain_subjects` metadata block for downstream reporters.
+- `_handshake` returns `chain_der: list[bytes]` via the Python 3.13
+  `ssl.SSLSocket.get_unverified_chain()` API. Pre-3.13 runtimes
+  degrade gracefully to `[leaf_der]` (single-element chain).
+- 16 new pytest cases in `tests/unit/test_scanners_tls_chain.py`
+  covering position classification (leaf-only, leaf+intermediate,
+  leaf+intermediate+root, root recognized via self-issuance),
+  summary fields, incomplete-chain finding, RSA-1024 intermediate
+  finding, SHA-1 intermediate finding (uses openssl CLI to forge a
+  real DER since cryptography 46+ refuses to sign SHA-1), and the
+  end-to-end scanner integration (3 assets emitted for a 3-cert
+  chain, weak intermediate finding points at `#intermediate-1`).
+
+### Empirically verified end-to-end (REAL endpoint)
+
+Two back-to-back scans of `www.agid.gov.it:443` with
+`PQC_AUDIT_FROZEN_AT=2026-05-17T00:00:00Z` +
+`PQC_AUDIT_REPORT_ID=sprint9d-chain-validation`:
+
+| Field | Observed value |
+|---|---|
+| chain length | 2 (leaf + intermediate, no root — Let's Encrypt practice) |
+| leaf | ECDSA-256 secp256r1, sha384 signature, `CN=www.agid.gov.it`, valid 2026-04-01 → 2026-06-30 (90 days) |
+| intermediate-1 | ECDSA-384 secp384r1, sha256 signature, `CN=E7,O=Let's Encrypt,C=US`, issued by `CN=ISRG Root X1,...` |
+| terminates_at_root | `false` (root sits in client trust store) |
+| CBOM crypto-asset count | 2 (`crypto:tls://...:443` + `crypto:tls://...:443#intermediate-1`) |
+| SARIF results | 2 (leaf + intermediate, both `PQC.QUANTUM_VULNERABLE.ECDSA-*` / `PQC.INTERMEDIATE_1.ECDSA-384`) |
+| CycloneDX 1.6 schema validation | **PASS** (0 errors) |
+| OASIS SARIF 2.1.0 schema validation | **PASS** (0 errors) |
+
+The output JSON went from 2.2 KB (leaf-only) to 4.0 KB (chain) — the
+extra 1.8 KB carries the position-suffixed asset, the chain metadata
+block, and the per-cert finding. Same envelope, more truth.
+
+### Honest gap list (not done in 9d — explicit roadmap)
+
+- **No cryptographic chain verification.** We surface what the server
+  sent, not whether the signatures actually chain. A malicious server
+  could send unrelated cert blobs and we would still emit two assets.
+  Cryptographic chain verification (issuer key → signature match) is
+  a separate sprint (9d.2) because it requires a trust store
+  consultation we do not ship.
+- **No root cert lookup.** When the server omits the root (best
+  practice), we do NOT walk the local trust store to fetch it. Two
+  consequences: (1) we can't tell Let's Encrypt → ISRG vs. Aruba →
+  AgID-accredited root from a single scan, (2) we never assess the
+  root crypto. Both are 9d.3 candidates if PwC scope demands.
+- **No SAN / hostname matching.** The leaf cert's
+  `Subject Alternative Name` extension is parsed implicitly by the
+  cryptography library but we don't surface a finding for `CN` vs.
+  `host` drift. That belongs to a separate "TLS posture" sprint.
+- Python <3.13 runtimes lose chain information silently (fall back
+  to leaf-only). CI matrix should add a 3.11 leg with a recorded skip
+  rather than a silent feature degradation.
+
 ## [Unreleased] — Sprint 4 (regulatory layer + security bump)
 
 Sprint 4 (2026-05-17, continued same day as Sprint 1-3) layers four
