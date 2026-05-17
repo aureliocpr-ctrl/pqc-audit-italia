@@ -805,15 +805,27 @@ async def _handshake(host: str, port: int, *, timeout_s: float = 8.0) -> dict[st
 
 
 class TLSScanner:
-    """Concrete scanner for ``type='tls'`` targets."""
+    """Concrete scanner for ``type='tls'`` targets.
+
+    Sprint 9d.6: accepts an optional ``agid_tsl_data`` (output of
+    :func:`pqc_audit.compliance.agid_tsl.parse_agid_tsl`). When
+    provided, the resolved trust anchor metadata is enriched via
+    :func:`pqc_audit.scanners.tls_trust_store.enrich_with_tsl` so the
+    leaf CryptoAsset carries a ``verified_in_agid_tsl`` flag and an
+    upgraded / downgraded pedigree (TSL is authoritative). Default
+    ``None`` preserves the 9d.3 behaviour exactly.
+    """
 
     name: str = _SCANNER_NAME
     category: ScanCategory = ScanCategory.NETWORK
 
+    def __init__(self, *, agid_tsl_data: dict | None = None) -> None:
+        self._agid_tsl_data = agid_tsl_data
+
     async def is_applicable(self, target: ScanTarget) -> bool:
         return target.type == "tls" and bool(target.host) and target.port is not None
 
-    async def scan(self, target: ScanTarget) -> ScanResult:
+    async def scan(self, target: ScanTarget) -> ScanResult:  # noqa: PLR0915
         started = frozen_now()
         assets: list[CryptoAsset] = []
         vulns: list[Vulnerability] = []
@@ -870,6 +882,12 @@ class TLSScanner:
                         else {}
                     )
                     trust_anchor = resolve_root_from_chain(chain_certs, trust_store)
+                    # Sprint 9d.6 — TSL enrichment (additive, optional).
+                    if self._agid_tsl_data is not None:
+                        from pqc_audit.scanners.tls_trust_store import (  # noqa: PLC0415
+                            enrich_with_tsl,
+                        )
+                        trust_anchor = enrich_with_tsl(trust_anchor, self._agid_tsl_data)
                     leaf_asset_id = f"tls://{target_repr}"
                     assets.append(
                         CryptoAsset(

@@ -103,9 +103,43 @@ def scan_tls_cmd(
         "--enforce",
         help="Evaluate the report against --policy and embed policy_evaluation in JSON.",
     ),
+    agid_tsl: bool = typer.Option(
+        False,
+        "--agid-tsl",
+        help=(
+            "Fetch the live AgID Trusted List (eIDAS) and cross-check the resolved "
+            "trust anchor. Upgrades pedigree to 'qualified_it_tsp_verified_via_tsl' "
+            "when the root is in the TSL; downgrades pattern-only matches when not."
+        ),
+    ),
 ) -> None:
     """Scan a single TLS endpoint and print a JSON audit report."""
-    auditor = Auditor(policy=policy, data_sensitivity_years=data_sensitivity_years)
+    tls_scanner_kwargs: dict = {}
+    if agid_tsl:
+        from pqc_audit.compliance.agid_tsl import (  # noqa: PLC0415
+            AgIDTSLFetchError,
+            AgIDTSLParseError,
+            fetch_agid_tsl,
+            parse_agid_tsl,
+        )
+        from pqc_audit.scanners.tls_scanner import TLSScanner  # noqa: PLC0415
+
+        try:
+            xml_bytes = fetch_agid_tsl(timeout=30.0)
+            tls_scanner_kwargs["agid_tsl_data"] = parse_agid_tsl(xml_bytes)
+        except (AgIDTSLFetchError, AgIDTSLParseError) as exc:
+            typer.echo(
+                f"warning: --agid-tsl fetch/parse failed ({exc}); "
+                "continuing without TSL enrichment",
+                err=True,
+            )
+        auditor = Auditor(
+            policy=policy,
+            data_sensitivity_years=data_sensitivity_years,
+            scanners=[TLSScanner(**tls_scanner_kwargs)],
+        )
+    else:
+        auditor = Auditor(policy=policy, data_sensitivity_years=data_sensitivity_years)
     target = ScanTarget(type="tls", host=host, port=port)
     report = asyncio.run(auditor.scan([target]))
     rendered = render_json(report, pretty=pretty)

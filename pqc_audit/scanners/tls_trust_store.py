@@ -313,3 +313,75 @@ def resolve_root_from_chain(
     if candidate is None:
         return dict(_EMPTY_RESOLUTION)
     return _build_root_metadata(candidate, source="trust_store")
+
+
+# ---------------------------------------------------------------------
+# Sprint 9d.6 — AgID TSL enrichment.
+# Separate function (not folded into resolve_root_from_chain) so
+# air-gapped callers without a TSL keep the 9d.3 behaviour unchanged.
+# ---------------------------------------------------------------------
+
+
+def enrich_with_tsl(root_metadata: dict, tsl_data: dict) -> dict:
+    """Cross-check the resolved root against the AgID Trusted List.
+
+    Args:
+        root_metadata: output of :func:`resolve_root_from_chain`.
+        tsl_data: output of
+            :func:`pqc_audit.compliance.agid_tsl.parse_agid_tsl`.
+
+    Returns:
+        a copy of ``root_metadata`` with two additions:
+
+        * ``verified_in_agid_tsl``: ``True`` iff the resolved
+          root's subject is present in the qualified-CA list of
+          the TSL (canonical Name match).
+        * ``pedigree`` upgraded / downgraded as follows:
+
+          - in TSL → ``"qualified_it_tsp_verified_via_tsl"`` (top
+            audit grade, regardless of the prior pattern-based
+            classification — the TSL is authoritative);
+          - not in TSL AND prior pedigree was ``"qualified_it_tsp"``
+            → ``"qualified_it_tsp_pattern_only"`` (honest downgrade:
+            the pattern matched but the TSL does not confirm it);
+          - otherwise the original pedigree is preserved.
+
+    Unresolved metadata (``resolved=False``) is passed through
+    unchanged except for ``verified_in_agid_tsl=False`` — we cannot
+    cross-check what we did not resolve.
+    """
+    out = dict(root_metadata)
+    if not out.get("resolved"):
+        out["verified_in_agid_tsl"] = False
+        return out
+
+    subject = out.get("root_subject") or ""
+    in_tsl = _subject_in_tsl_qualified_certs(subject, tsl_data)
+    out["verified_in_agid_tsl"] = in_tsl
+
+    prior_pedigree = out.get("pedigree", "unknown")
+    if in_tsl:
+        out["pedigree"] = "qualified_it_tsp_verified_via_tsl"
+    elif prior_pedigree == "qualified_it_tsp":
+        out["pedigree"] = "qualified_it_tsp_pattern_only"
+    return out
+
+
+def _subject_in_tsl_qualified_certs(subject_dn: str, tsl_data: dict) -> bool:
+    """Local canonical-Name lookup so this module has no dependency on
+    :mod:`pqc_audit.compliance.agid_tsl` (which would import-cycle)."""
+    if not subject_dn:
+        return False
+    try:
+        probe_name = x509.Name.from_rfc4514_string(subject_dn)
+    except (ValueError, TypeError):
+        return False
+    probe_key = _name_to_key(probe_name)
+    for der in tsl_data.get("qualified_certs", []):
+        try:
+            cert = x509.load_der_x509_certificate(der)
+        except (ValueError, TypeError):
+            continue
+        if _name_to_key(cert.subject) == probe_key:
+            return True
+    return False
