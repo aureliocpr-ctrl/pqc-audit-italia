@@ -16,6 +16,15 @@ from collections import defaultdict
 from typing import Any
 
 from pqc_audit import __version__
+from pqc_audit.compliance.nis2 import (
+    SANCTION_ESSENTIAL_FINE_CAP_EUR,
+    SANCTION_ESSENTIAL_TURNOVER_PCT,
+    SANCTION_IMPORTANT_FINE_CAP_EUR,
+    SANCTION_IMPORTANT_TURNOVER_PCT,
+    NIS2Article,
+    apply_nis2_mapping,
+    summarize_articles,
+)
 from pqc_audit.core.models import AuditReport, CryptoAsset, RiskLevel, Vulnerability
 
 _DISCLAIMER = (
@@ -174,6 +183,66 @@ def _render_compliance(report: AuditReport) -> str:
     return _section("Compliance") + body
 
 
+def _render_nis2_compliance(report: AuditReport) -> str:
+    """Render NIS2 / D.Lgs. 138/2024 art. 24 mapping inline in the report.
+
+    Skipped entirely if the audit has zero vulnerabilities — there is
+    nothing to cite. Unmapped findings (no pattern match in
+    :data:`pqc_audit.compliance.nis2._TITLE_PATTERNS`) are surfaced as
+    "da revisionare manualmente" rather than silently dropped, per the
+    project's anti-fuffa stance: inventing a regulation citation would
+    be worse than admitting the gap.
+
+    The section heading is "## NIS2 — D.Lgs. 138/2024 art. 24" (NOT
+    "## Compliance NIS2") to avoid colliding with the policy-engine
+    "## Compliance" section. Both can coexist in the same report.
+    """
+    if report.total_vulnerabilities == 0:
+        return ""
+    mapping = apply_nis2_mapping(report)
+    if not mapping:
+        return ""
+
+    lines: list[str] = [_section("NIS2 — D.Lgs. 138/2024 art. 24")]
+    lines.append("| Vulnerability | Articolo D.Lgs. 138/2024 | Direttiva UE | Topic |\n")
+    lines.append("| --- | --- | --- | --- |\n")
+
+    all_articles: list[NIS2Article] = []
+    for title, articles in mapping.items():
+        if not articles:
+            lines.append(
+                f"| `{title}` | — | — | _da revisionare manualmente_ |\n"
+            )
+            continue
+        legal_refs = "; ".join(a.legal_reference for a in articles)
+        eu_refs = "; ".join(a.eu_directive_reference for a in articles)
+        topics = "; ".join(a.topic for a in articles)
+        lines.append(f"| `{title}` | {legal_refs} | {eu_refs} | {topics} |\n")
+        all_articles.extend(articles)
+
+    distinct = summarize_articles(all_articles)
+    if distinct:
+        lines.append("\n### Articoli implicati\n\n")
+        for art in distinct:
+            lines.append(
+                f"- **{art.legal_reference}** — {art.topic} "
+                f"({art.eu_directive_reference})\n"
+            )
+
+    lines.append("\n### Quadro sanzionatorio art. 38 D.Lgs. 138/2024\n\n")
+    lines.append(
+        f"- Soggetti essenziali: fino a EUR {SANCTION_ESSENTIAL_FINE_CAP_EUR:,} "
+        f"o {SANCTION_ESSENTIAL_TURNOVER_PCT}% del fatturato mondiale annuo "
+        "(applicato il maggiore).\n"
+    )
+    lines.append(
+        f"- Soggetti importanti: fino a EUR {SANCTION_IMPORTANT_FINE_CAP_EUR:,} "
+        f"o {SANCTION_IMPORTANT_TURNOVER_PCT}% del fatturato mondiale annuo "
+        "(applicato il maggiore).\n"
+    )
+    return "".join(lines)
+
+
 def _render_footer() -> str:
     return (
         "\n---\n\n"
@@ -199,6 +268,7 @@ def render(report: AuditReport) -> str:
         _render_vulnerabilities(report),
         _render_recommendations(report),
         _render_compliance(report),
+        _render_nis2_compliance(report),
         _render_footer(),
     ]
     return "".join(parts)

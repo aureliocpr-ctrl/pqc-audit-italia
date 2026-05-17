@@ -28,6 +28,126 @@ before being sent to a qualified service. Anything beyond that
 (qualified accreditation paperwork, eIDAS conformance assessment)
 sits outside this repository.
 
+## [Unreleased] — Sprint 9h-integration (NIS2 inline in executive Markdown)
+
+Sprint 9h-integration (2026-05-17) ships the user-facing payoff of
+Sprint 9h: the `pqc_audit.compliance.nis2` mapping is now invoked
+**automatically** by `pqc_audit.reporters.markdown_reporter.render()`,
+which is the function behind every `pqc-audit report --format markdown`
+invocation and the input to `pqc-audit report --format pdf`. A DPO /
+CISO can hand the Markdown to a regulator without running the
+secondary `pqc-audit compliance nis2` CLI.
+
+### What's new in the executive Markdown
+
+A new section titled `## NIS2 — D.Lgs. 138/2024 art. 24` is emitted
+after the policy-engine `## Compliance` section (when present) and
+before the footer. It contains three blocks:
+
+1. **Per-finding citation table** — one row per distinct vulnerability
+   title, with four columns: title, `D.Lgs. 138/2024, art. 24, comma
+   2, lett. (X)`, `Direttiva (UE) 2022/2555 art. 21(2)(X)`, and the
+   Italian topic. Multi-article matches are joined with `;`.
+2. **Articoli implicati summary** — distinct list (order-preserving
+   via `summarize_articles`) of every NIS2Article cited at least once
+   in the table, with the EU directive reference appended.
+3. **Quadro sanzionatorio art. 38** — the four constants from
+   `pqc_audit.compliance.nis2` (`SANCTION_ESSENTIAL_FINE_CAP_EUR`,
+   `SANCTION_ESSENTIAL_TURNOVER_PCT`, and the two `IMPORTANT_*` twins)
+   formatted as `EUR 10,000,000 o 2.0%` and `EUR 7,000,000 o 1.4%`.
+   Reporters cite the named constants instead of hard-coding the
+   magic numbers, so any future correction to the decree propagates
+   automatically.
+
+### Anti-fuffa contracts
+
+- **Skip on empty report.** `_render_nis2_compliance` returns `""`
+  immediately when `report.total_vulnerabilities == 0`, *and* when
+  `apply_nis2_mapping` returns an empty dict. The section is not
+  rendered for clean scans — silence is honest.
+- **Unmapped findings surfaced, not dropped.** When a vulnerability
+  title does not match any pattern in `_TITLE_PATTERNS`, the row is
+  emitted with `—` in the article column and the Italian marker
+  `_da revisionare manualmente_` in the topic column. Inventing a
+  regulation citation would be fuffa.
+- **Heading anti-collision.** The section heading is `## NIS2 —
+  D.Lgs. 138/2024 art. 24`, NOT `## Compliance NIS2`. The latter
+  would silently break the pre-existing
+  `test_markdown_reporter_no_compliance_section_when_evaluation_missing`
+  test by introducing a false-positive `## Compliance` prefix.
+
+### Test coverage
+
+- New: `tests/unit/test_markdown_reporter_nis2.py` — 13 tests
+  covering: section presence/absence, ordering wrt policy
+  `## Compliance` section, lettered article citation `lett. (h)`,
+  EU directive reference `Direttiva (UE) 2022/2555`, Italian topic
+  text, unmapped finding `da revisionare manualmente` marker,
+  distinct article dedup in summary block (count = 1 for two
+  findings both mapping to ART_24_2_H), sanction caps essenziali
+  (`10,000,000` / `2.0`) and importanti (`7,000,000` / `1.4`),
+  `art. 38` citation, and the backwards-compat invariant that
+  `## Compliance` never appears when `policy_evaluation` is absent.
+- Full suite: **544 passed, 4 skipped** (3 weasyprint runtime
+  unavailable on Windows, 1 SHA-1 cryptography refusal — both
+  preexisting).
+- Ruff: clean.
+
+### Empirical E2E on agid.gov.it
+
+```
+python -m pqc_audit scan tls --host agid.gov.it --port 443 > agid.json
+python -m pqc_audit report -i agid.json -f markdown
+```
+
+The output now contains:
+
+```markdown
+## NIS2 — D.Lgs. 138/2024 art. 24
+
+| Vulnerability | Articolo D.Lgs. 138/2024 | Direttiva UE | Topic |
+| --- | --- | --- | --- |
+| `Quantum-vulnerable algorithm in use (RSA-2048)` | D.Lgs. 138/2024, art. 24, comma 2, lett. (h) | Direttiva (UE) 2022/2555 art. 21(2)(h) | Politiche e procedure relative all'uso della crittografia e cifratura |
+| `[intermediate-1] Quantum-vulnerable algorithm in use (RSA-2048)` | D.Lgs. 138/2024, art. 24, comma 2, lett. (h) | Direttiva (UE) 2022/2555 art. 21(2)(h) | Politiche e procedure relative all'uso della crittografia e cifratura |
+
+### Articoli implicati
+
+- **D.Lgs. 138/2024, art. 24, comma 2, lett. (h)** — Politiche e procedure relative all'uso della crittografia e cifratura (Direttiva (UE) 2022/2555 art. 21(2)(h))
+
+### Quadro sanzionatorio art. 38 D.Lgs. 138/2024
+
+- Soggetti essenziali: fino a EUR 10,000,000 o 2.0% del fatturato mondiale annuo (applicato il maggiore).
+- Soggetti importanti: fino a EUR 7,000,000 o 1.4% del fatturato mondiale annuo (applicato il maggiore).
+```
+
+### Critic gate
+
+`critic-orchestrator` 3-worker adversarial review (167s, $1.79):
+
+| Worker | Verdict | Confidence | Note |
+|---|---|---|---|
+| falsification | claim_holds | 0.97 | RED→GREEN empirical via stash/unstash. 13/13 fail pre-fix, 13/13 pass post-fix. |
+| caller_verification | claim_holds | 0.97 | `_render_nis2_compliance` called unconditionally from `render()` at line 271; reachable via Typer CLI `pqc-audit report --format markdown` (cli.py:459, 467) and indirectly via `pdf_reporter` which wraps `markdown_reporter.render`. |
+| counterexample | claim_holds | 0.88 | 7 critical points verified: heading anti-collision, sanction f-string locale-independence, summary dedup `lett. (h)` count = 1, unmapped path renders "_da revisionare manualmente_", zero-vuln short-circuit, ordering invariant. No counterexample. |
+
+**Consensus: hold 3-0-0.**
+
+### Honest gap list (still not done)
+
+- Root trust-store lookup (CA pedigree) — Sprint 9d.3.
+- ML-DSA / SLH-DSA signature_algorithms probe — Sprint 9f.2.
+- sigstore keyless wrapper — Sprint 8e.
+- Database TLS scanner (Postgres / MySQL / Oracle / MSSQL).
+- Multi-article rows in the table use `; ` as separator. Markdown
+  tables tolerate this but a future iteration may emit one row per
+  (finding, article) pair for sortability.
+- Unmapped-finding rows do not propose a candidate pattern; we just
+  flag for human review. A future iteration could LLM-classify the
+  title against the lettered measures, then human-confirm before
+  adding it to `_TITLE_PATTERNS`.
+
+---
+
 ## [Unreleased] — Sprint 9d.2 (cryptographic chain signature verification)
 
 Sprint 9d.2 (2026-05-17) closes the explicit gap documented in Sprint
