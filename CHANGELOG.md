@@ -133,6 +133,55 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   guard, the malformed JSON path, and the live fetch via
   monkeypatch. 2 CLI tests for the subcommand wiring.
 
+### Fixed — rule-pack SHA-256 was NOT cross-OS stable (Sprint 9 step B)
+
+`critic-orchestrator` adversarial review (job `a0302e7b67e46711`,
+3 workers, $2.14, 147 s) returned `consensus=claim_holds (2-1-0)`
+but the counterexample worker produced empirical proof of a real
+regression in the reproducibility argument:
+
+> Windows checkout with the Git default `autocrlf=true` materializes
+> `pqc_audit/rule_packs/nist-core-2026.yaml` as 7279 bytes with CRLF
+> → SHA-256 `02cd5e7bbc323a16b84b9ee64be27445a8d4f68ff22e3d4a85a8bde1ad6c66d7`.
+> Same commit on Linux/macOS (or Windows `autocrlf=input/false`):
+> 7067 bytes with LF → SHA-256 `a0650a024cf94073bf1ecb69ab6d95dfec2ba30b9863238fb50bbfef9e2c9241`.
+> Hash mismatch with no semantic change in the file.
+
+For PA Italian audits (target audience predominantly Windows, Git
+for Windows installs with autocrlf=true by default), this would
+have produced a false "rule pack tampered" signal on every Linux-
+emitted audit when verified on a Windows reviewer's machine.
+Sprint 7's reproducibility argument was empirically broken.
+
+Two-layer fix:
+
+  * **Load-bearing**: `_compile_pack_overlay()` now hashes
+    `pack_path.read_bytes().replace(b"\r\n", b"\n")` instead of
+    the raw working-tree bytes. The digest is now identical
+    regardless of client autocrlf policy.
+  * **Defense in depth**: new `.gitattributes` forces
+    `eol=lf` on `pqc_audit/rule_packs/*.yaml`,
+    `pqc_audit/policies/*.yaml`, and
+    `tests/fixtures/schemas/*.json`, so the materialized file on
+    disk matches the canonical form on every checkout.
+
+2 new tests in `tests/unit/test_policy_engine.py`:
+  * Synthetic rule pack written twice (LF and CRLF) produces the
+    SAME `file_sha256` (no drift).
+  * `file_sha256` equals
+    `sha256(pack_path.read_bytes().replace(b"\r\n", b"\n"))` for
+    `nist-core-2026.yaml` — hard-pins the normalization rule so
+    anyone reproducing the audit by hand knows exactly which bytes
+    to hash.
+
+Total local tests: 465 / 3 skipped (was 463 / 3, +2 new).
+
+This is the kind of bug only an adversarial verifier catches —
+my own tests were all running on the same filesystem in the same
+process, so CRLF/LF drift was invisible. Counterexample worker
+output reproduced and the fix lands two-tier so the auditor never
+has to think about line endings again.
+
 ### Fixed — CBOM `executionEnvironment` was not valid CycloneDX 1.6 (Sprint 9 step A)
 
 Schema validation against the official upstream CycloneDX 1.6

@@ -752,3 +752,100 @@ def test_policy_evaluation_provenance_distinct_packs_distinct_hashes() -> None:
     assert "nist-core-2026" in by_name
     assert "agid-absc-2026" in by_name
     assert by_name["nist-core-2026"] != by_name["agid-absc-2026"]
+
+
+# ---------------------------------------------------------------------------
+# Sprint 9 step B — line-ending stability across OS / Git autocrlf modes.
+# Critic-orchestrator job a0302e7b67e46711 found the SHA-256 hashing in
+# `_compile_pack_overlay` reads raw bytes from the working tree, so a
+# Windows checkout with autocrlf=true (PA Italian default) and a Linux/CI
+# checkout produce different digests for the same commit — falsifying the
+# audit-reproducibility claim. These tests pin the LF-normalized
+# semantics so the bug cannot regress.
+# ---------------------------------------------------------------------------
+
+
+def test_provenance_hash_is_lf_normalized_against_crlf_drift(tmp_path, monkeypatch) -> None:
+    """The provenance SHA-256 must be computed on LF-normalized bytes.
+
+    Builds a synthetic rule pack on disk twice — once with LF endings,
+    once with CRLF endings — and asserts the resulting hash is the same.
+    Without the fix the Windows checkout would hash CRLF bytes and the
+    Linux checkout would hash LF bytes, producing different audit digests
+    for git-identical content.
+    """
+    from pqc_audit.policy_engine import evaluate_assets
+    from pqc_audit.rule_packs import _RULE_PACK_DIR  # type: ignore[attr-defined]
+
+    yaml_lf = (
+        "name: test-eol-pack-2026\n"
+        'version: "2026.05.17"\n'
+        "title: EOL test pack\n"
+        "description: synthetic pack used by the EOL regression test\n"
+        "provenance:\n"
+        "  source: pqc-audit-test\n"
+        "  url: https://example.test/eol-pack\n"
+        "  retrieved: 2026-05-17\n"
+        "applies_to:\n"
+        "  asset_categories: [tls]\n"
+        "controls: []\n"
+        "evidence_requirements: []\n"
+    )
+    yaml_crlf = yaml_lf.replace("\n", "\r\n")
+
+    pack_path = _RULE_PACK_DIR / "test-eol-pack-2026.yaml"
+    pack_path.write_bytes(yaml_lf.encode("utf-8"))
+    try:
+        policy_lf = {
+            "name": "rp_eol_lf",
+            "description": "x",
+            "data_sensitivity_years": 10,
+            "rule_packs": ["test-eol-pack-2026"],
+        }
+        eval_lf = evaluate_assets([], policy_lf)
+        lf_hash = next(
+            p.file_sha256 for p in eval_lf.rule_pack_provenance if p.name == "test-eol-pack-2026"
+        )
+
+        pack_path.write_bytes(yaml_crlf.encode("utf-8"))
+        eval_crlf = evaluate_assets([], policy_lf)
+        crlf_hash = next(
+            p.file_sha256 for p in eval_crlf.rule_pack_provenance if p.name == "test-eol-pack-2026"
+        )
+
+        assert lf_hash == crlf_hash, (
+            f"CRLF/LF drift produces different digests "
+            f"({lf_hash!r} vs {crlf_hash!r}) — Windows/autocrlf=true and "
+            "Linux audits would mis-match for git-identical content."
+        )
+    finally:
+        if pack_path.is_file():
+            pack_path.unlink()
+
+
+def test_provenance_hash_pins_lf_bytes_explicitly() -> None:
+    """The digest MUST equal sha256 of the LF-normalized file bytes.
+
+    Hard-pin the algorithm so anyone reproducing the verification by
+    hand knows exactly which bytes to hash.
+    """
+    import hashlib
+
+    from pqc_audit.policy_engine import evaluate_assets
+    from pqc_audit.rule_packs import rule_pack_file_path
+
+    pack_path = rule_pack_file_path("nist-core-2026")
+    raw = pack_path.read_bytes()
+    expected = hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
+
+    eval_ = evaluate_assets(
+        [],
+        {
+            "name": "rp_lf_pin",
+            "description": "x",
+            "data_sensitivity_years": 10,
+            "rule_packs": ["nist-core-2026"],
+        },
+    )
+    actual = next(p.file_sha256 for p in eval_.rule_pack_provenance if p.name == "nist-core-2026")
+    assert actual == expected

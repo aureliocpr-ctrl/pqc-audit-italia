@@ -1,0 +1,32 @@
+# Line-ending policy
+# ====================================================================
+#
+# Sprint 9 step B — defense in depth for the legal-fingerprint chain.
+# The policy engine hashes rule-pack YAML files to produce the
+# ``rule_pack_provenance.file_sha256`` field that anchors an audit
+# report to the exact regulatory anchor used at scan time. The Python
+# code at pqc_audit/policy_engine.py LF-normalizes the bytes before
+# hashing, so a wrong client autocrlf setting can no longer
+# falsify the verification. This file is the second line of defense:
+# it forces eol=lf on the regulatory YAML at checkout/commit so the
+# materialized file on disk also matches the canonical form.
+#
+# Without this, a contributor on Windows could push a YAML edit with
+# CRLF endings into the canonical commit, and the digest the engine
+# advertises would no longer round-trip the public reference. The
+# critic-orchestrator job a0302e7b67e46711 documented the failure
+# mode empirically.
+
+# Default: normalise text on commit, leave eol up to OS on checkout.
+* text=auto
+
+# Hard-pin LF for files whose byte content is part of the legal
+# fingerprint or whose semantics are sensitive to line endings.
+pqc_audit/rule_packs/*.yaml text eol=lf
+pqc_audit/policies/*.yaml    text eol=lf
+tests/fixtures/schemas/*.json text eol=lf
+
+# Vendored reference data (schemas, fixtures) — never normalise.
+*.png binary
+*.ico binary
+*.pdf binary

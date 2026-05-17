@@ -558,7 +558,20 @@ def _compile_pack_overlay(policy: dict[str, Any]) -> dict[str, Any]:
     for pack_name in name_list:
         pack = load_rule_pack(pack_name)
         pack_path = rule_pack_file_path(pack_name)
-        file_bytes = pack_path.read_bytes()
+        # Sprint 9 step B: hash LF-normalized bytes, not raw working-tree
+        # bytes. Critic-orchestrator job a0302e7b67e46711 empirically
+        # proved that a Windows checkout with the Git default
+        # ``autocrlf=true`` materializes nist-core-2026.yaml as 7279
+        # CRLF bytes (sha256 02cd5e7b...) while a Linux/macOS checkout
+        # of the SAME commit yields 7067 LF bytes (sha256 a0650a02...).
+        # Two regulators verifying the same commit got different
+        # digests — a false "tampered" signal. Replacing CRLF with LF
+        # before hashing makes the digest invariant to the client's
+        # line-ending policy. The ``.gitattributes`` shipped alongside
+        # forces ``eol=lf`` on the YAML files as defense in depth, but
+        # the normalization here is the load-bearing fix because we
+        # cannot assume every consumer's git config.
+        file_bytes = pack_path.read_bytes().replace(b"\r\n", b"\n")
         sha = hashlib.sha256(file_bytes).hexdigest()
         provenance_records.append(
             RulePackProvenance(
