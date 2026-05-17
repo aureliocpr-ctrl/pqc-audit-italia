@@ -228,7 +228,13 @@ def _component_for(asset: CryptoAsset) -> dict[str, Any]:
     algo_props: dict[str, Any] = {
         "primitive": primitive,
         "parameterSetIdentifier": asset.algorithm.canonical_name,
-        "executionEnvironment": "software",
+        # CycloneDX 1.6 enum: software-plain-ram | software-encrypted-ram
+        # | software-tee | hardware | other | unknown. We default to
+        # ``unknown`` because pqc-audit does not introspect runtime
+        # memory protection of the asset under audit. A later sprint
+        # can downgrade to ``software-plain-ram`` for software-only
+        # discoveries and ``hardware`` when an HSM is detected.
+        "executionEnvironment": "unknown",
         "implementationPlatform": "generic",
         "certificationLevel": ["none"],
         "cryptoFunctions": _crypto_functions_for(primitive),

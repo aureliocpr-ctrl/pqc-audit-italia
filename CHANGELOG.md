@@ -133,6 +133,46 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   guard, the malformed JSON path, and the live fetch via
   monkeypatch. 2 CLI tests for the subcommand wiring.
 
+### Fixed — CBOM `executionEnvironment` was not valid CycloneDX 1.6 (Sprint 9 step A)
+
+Schema validation against the official upstream CycloneDX 1.6
+schema (`tests/fixtures/schemas/cyclonedx-1.6.schema.json`) found
+the reporter was emitting `"executionEnvironment": "software"`, but
+the spec's `cryptoExecutionEnvironment` enum is::
+
+    software-plain-ram | software-encrypted-ram | software-tee |
+    hardware | other | unknown
+
+Result: any CBOM emitted by 0.3.0-beta1 would have been REJECTED
+at upload time by Dependency-Track, Anchore, Microsoft SBOM Tool,
+and every other CycloneDX-aware consumer. A real auditor handing
+the CBOM to a procurement reviewer would have hit a hard error.
+
+Fix: emit `"unknown"` (the conservative, schema-valid default).
+A later sprint can downgrade to `software-plain-ram` for software
+discoveries and `hardware` when an HSM is detected, but those
+classifications require runtime introspection that pqc-audit does
+not yet perform — claiming a sharper value without the evidence
+would be fuffa.
+
+### Added — official-schema validation of CBOM + SARIF outputs (Sprint 9 step A)
+
+Vendored the two upstream JSON Schemas under
+`tests/fixtures/schemas/` (bit-identical mirrors of CycloneDX
+1.6 and OASIS SARIF 2.1.0). Four new pytest cases:
+
+  * CBOM output validates against `cyclonedx-1.6.schema.json`
+    (Draft 7) — currently 0 errors after the fix above.
+  * SARIF output validates against `sarif-2.1.0.schema.json`
+    (Draft 4) — currently 0 errors.
+  * CBOM declares `bomFormat: CycloneDX` + `specVersion: 1.6`.
+  * SARIF declares `version: 2.1.0` + the canonical `$schema` URL.
+
+These tests are the empirical proof that "CycloneDX 1.6" and
+"SARIF 2.1.0" in the README are accurate, not marketing.
+`jsonschema 4.26.0` is already a transitive dep (no new top-level
+dependency added).
+
 ### Added — RFC 3161 Time-Stamp Protocol client (Sprint 8 step D)
 
 New module `pqc_audit.signing.tsa_client` with two pure-stdlib
