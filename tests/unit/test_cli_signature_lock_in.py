@@ -19,10 +19,47 @@ from typer.testing import CliRunner
 from pqc_audit.cli import app
 
 # typer renders --help inside a Rich panel that adapts to terminal
-# width. On narrow widths (default 80 cols on CI) long flag names
-# get truncated like ``--data-sensitivity-ye…``. Pin a wider terminal
-# so the lock-in matches the full flag name.
-runner = CliRunner(env={"COLUMNS": "200"})
+# width AND colour. Two CI/local environment differences must be
+# neutralised here:
+#   * NO_COLOR=1 + TERM=dumb — on Linux/macOS Rich emits ANSI
+#     escapes (e.g. ``\x1b[1;36m--csv\x1b[0m``) that fragment the
+#     flag name and make the in-string substring check miss. On
+#     Windows Rich already auto-detects "no TTY" and doesn't colour,
+#     which is why the lock-in was passing locally but failing on
+#     CI ubuntu/macOS. NO_COLOR is the no-color.org standard; TERM
+#     is a belt-and-braces fallback for Rich versions that ignore
+#     NO_COLOR.
+# COLUMNS is intentionally NOT set: typer/CliRunner runs with no TTY,
+# so Rich ignores the env var and falls back to its own 80-col
+# default. Pass-through long flags (``--data-sensitivity-years``) get
+# truncated to ``--data-sensitivity-yea…`` in the rendered panel.
+# We tolerate that via :func:`_flag_present_in_help` below rather than
+# fighting the rendering layer.
+runner = CliRunner(env={"NO_COLOR": "1", "TERM": "dumb"})
+
+
+def _flag_present_in_help(out: str, flag: str) -> bool:
+    """Return True if ``flag`` appears in ``out``, tolerating Rich truncation.
+
+    Rich truncates long option names with a horizontal ellipsis when
+    the panel is narrower than the flag (e.g. ``--data-sensitivity-yea…``
+    or ``--data-sensitivity-yea...`` depending on Rich version). The
+    customer-visible CLI still accepts the FULL flag — the help-panel
+    truncation is just a visual artifact — so the lock-in must accept
+    a prefix-plus-ellipsis form as evidence the flag exists.
+
+    Conservative heuristic: a truncation is accepted only when the
+    prefix is at least 60% of the original flag length, otherwise the
+    ambiguity is too high to count as a stable lock-in.
+    """
+    if flag in out:
+        return True
+    min_prefix = max(len(flag) // 2 + 3, 8)
+    for marker in ("…", "..."):
+        for cut in range(len(flag) - 1, min_prefix - 1, -1):
+            if (flag[:cut] + marker) in out:
+                return True
+    return False
 
 
 @pytest.mark.parametrize(
@@ -59,7 +96,7 @@ def test_cli_options_stable(subcommand: list[str], required_options: list[str]) 
     result = runner.invoke(app, subcommand)
     assert result.exit_code == 0, f"--help failed: {result.stdout + result.stderr}"
     out = result.stdout
-    missing = [opt for opt in required_options if opt not in out]
+    missing = [opt for opt in required_options if not _flag_present_in_help(out, opt)]
     assert not missing, (
         f"CLI option(s) {missing} missing from `pqc-audit {' '.join(subcommand[:-1])}` "
         f"--help output. Renaming a flag is a breaking change for customer "

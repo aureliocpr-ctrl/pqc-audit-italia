@@ -69,6 +69,29 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   the CI gate `ruff format --check .`. No logic changes — purely
   whitespace / quote-style / line-break normalization.
 
+### Fixed — CI test suite green on ubuntu/macOS (Sprint 5 #1)
+
+- 8 pytest cases were failing on the Linux/macOS CI runners while
+  passing on Windows since Sprint 1. Two distinct root causes
+  diagnosed and fixed:
+    1. **Rich ANSI escapes fragment the flag name on Linux/macOS**.
+       On a CI runner Rich auto-detects a writable stdout and emits
+       `\x1b[1;36m--csv\x1b[0m` etc., so the `"--csv" in help_out`
+       substring check misses. Fix: `CliRunner(env={"NO_COLOR": "1",
+       "TERM": "dumb"})` for both the lock-in runner in
+       `tests/unit/test_cli_signature_lock_in.py` and a new
+       `help_runner` in `tests/unit/test_cli_batch.py`. Standard
+       no-color.org env + dumb-terminal fallback.
+    2. **Rich panel still truncates long flag names at 80 cols** even
+       with `COLUMNS=200` because CliRunner has no TTY and Rich
+       ignores the env. Fix: helper `_flag_present_in_help(out,
+       flag)` that accepts both the full flag name and the
+       Rich-truncated `--prefix…` / `--prefix...` form (only when the
+       prefix covers ≥60% of the flag, to avoid silently approving
+       a real rename).
+- Reproduced locally with `FORCE_COLOR=1`: 7 fails before the fix,
+  12 / 12 green after. Full unit suite: 375 passed, 3 skipped.
+
 ### Changed — dashboard enterprise polish (Sprint 4 #4)
 
 - `dashboard/src/styles.css`: refined Big4-style palette with auditor

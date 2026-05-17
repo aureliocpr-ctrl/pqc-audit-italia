@@ -24,6 +24,14 @@ from pqc_audit.cli import app
 
 runner = CliRunner()
 
+# Dedicated runner for ``--help`` assertions: see the docstring in
+# tests/unit/test_cli_signature_lock_in.py for the reason. NO_COLOR
+# + TERM=dumb prevents Rich from emitting ANSI escapes that would
+# fragment the flag names (``--csv`` arriving as
+# ``\x1b[1;36m--csv\x1b[0m`` on CI Linux/macOS). The plain ``runner``
+# above is left intact because batch invocations emit JSON only.
+help_runner = CliRunner(env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"})
+
 
 # ── Pure helpers ─────────────────────────────────────────────────
 
@@ -243,7 +251,7 @@ def test_help_shows_batch_subcommand() -> None:
 
 
 def test_batch_help_lists_required_options() -> None:
-    result = runner.invoke(app, ["batch", "--help"])
+    result = help_runner.invoke(app, ["batch", "--help"])
     assert result.exit_code == 0
     out = result.stdout
     for opt in ("--csv", "--targets", "--policy", "--out"):
