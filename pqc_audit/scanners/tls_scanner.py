@@ -27,6 +27,7 @@ from typing import Any
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
+from cryptography.x509.oid import AuthorityInformationAccessOID
 
 from pqc_audit.core.algorithms import AlgorithmClass, classify_algorithm, is_deprecated
 from pqc_audit.core.clock import frozen_now
@@ -262,6 +263,151 @@ def assess_certificate(
         )
 
     return vulns
+
+
+def extract_revocation_info(cert: x509.Certificate) -> dict[str, Any]:  # noqa: PLR0912 — 3 distinct X.509 extensions, each with its own try/except branch
+    """Surface revocation-relevant X.509 extensions from a certificate.
+
+    Returns a dict with these stable keys (always present, never raises):
+
+    * ``ocsp_responder_urls`` — list of URLs from
+      ``Authority Information Access`` extension where access_method is
+      ``id-ad-ocsp`` (1.3.6.1.5.5.7.48.1).
+    * ``ca_issuers_urls`` — list of URLs from AIA where access_method is
+      ``id-ad-caIssuers`` (1.3.6.1.5.5.7.48.2). Useful for chain
+      resolution / AIA-chasing diagnostics.
+    * ``crl_distribution_points`` — list of CRL URLs from
+      ``CRL Distribution Points`` extension (2.5.29.31).
+    * ``must_staple`` — bool, True iff RFC 7633 TLS Feature extension
+      (1.3.6.1.5.5.7.1.24) contains ``status_request`` (feature 5).
+    * ``has_revocation_mechanism`` — bool, True iff at least one of
+      ocsp_responder_urls or crl_distribution_points is non-empty.
+      ``must_staple`` alone does NOT count — it's a hint to TLS clients
+      to require stapling at handshake time, not a revocation source.
+
+    Real-world reference: as of Dec 2024, Let's Encrypt retired OCSP
+    entirely (https://letsencrypt.org/2024/12/05/ending-ocsp/), so a
+    2026-issued LE cert has caIssuers + CRL DP but NO OCSP responder
+    URL. ``has_revocation_mechanism`` stays True because the CRL DP is
+    enough — modern clients use CRLite or similar batched delta-CRL
+    services. We surface the fact, we do not gate on it.
+    """
+    ocsp_urls: list[str] = []
+    ca_issuers_urls: list[str] = []
+    crl_dps: list[str] = []
+    must_staple = False
+
+    # Authority Information Access — separate OCSP from caIssuers.
+    try:
+        aia = cert.extensions.get_extension_for_class(x509.AuthorityInformationAccess).value
+    except x509.ExtensionNotFound:
+        aia = None
+    if aia is not None:
+        for desc in aia:
+            loc = desc.access_location
+            if not isinstance(loc, x509.UniformResourceIdentifier):
+                continue
+            if desc.access_method == AuthorityInformationAccessOID.OCSP:
+                ocsp_urls.append(loc.value)
+            elif desc.access_method == AuthorityInformationAccessOID.CA_ISSUERS:
+                ca_issuers_urls.append(loc.value)
+
+    # CRL Distribution Points — take only URI entries from full_name.
+    try:
+        crl_ext = cert.extensions.get_extension_for_class(x509.CRLDistributionPoints).value
+    except x509.ExtensionNotFound:
+        crl_ext = None
+    if crl_ext is not None:
+        for dp in crl_ext:
+            for name in dp.full_name or []:
+                if isinstance(name, x509.UniformResourceIdentifier):
+                    crl_dps.append(name.value)
+
+    # TLS Feature (RFC 7633) — Must-Staple is feature value 5
+    # (status_request). cryptography exposes TLSFeature + TLSFeatureType.
+    try:
+        tls_feature = cert.extensions.get_extension_for_class(x509.TLSFeature).value
+    except x509.ExtensionNotFound:
+        tls_feature = None
+    if tls_feature is not None:
+        for f in tls_feature:
+            if f is x509.TLSFeatureType.status_request:
+                must_staple = True
+                break
+
+    return {
+        "ocsp_responder_urls": ocsp_urls,
+        "ca_issuers_urls": ca_issuers_urls,
+        "crl_distribution_points": crl_dps,
+        "must_staple": must_staple,
+        "has_revocation_mechanism": bool(ocsp_urls or crl_dps),
+    }
+
+
+def assess_revocation(
+    info: dict[str, Any],
+    *,
+    asset_id: str = "",
+) -> list[Vulnerability]:
+    """Produce vulnerability findings from a revocation-info dict.
+
+    Two kinds of findings:
+
+    * **No revocation mechanism** (LOW, CWE-295) — neither AIA-OCSP nor
+      CRL DP. Modern CAs always include at least one; absence usually
+      means a self-signed leaf or a misissued cert.
+    * **OCSP Must-Staple** (INFO) — RFC 7633 TLS Feature `status_request`
+      is a positive operational signal worth surfacing in the report
+      (executive summary can flag PA / banche that DO enforce stapling).
+
+    Note: we do NOT verify that the server actually staples an OCSP
+    response in the TLS handshake. Active stapling verification is a
+    separate Sprint 9g.2 candidate because it requires comparing the
+    Must-Staple bit with the TLS-level ``status_request`` payload.
+    """
+    findings: list[Vulnerability] = []
+    affected = (asset_id,) if asset_id else ()
+
+    if not info.get("has_revocation_mechanism", False):
+        findings.append(
+            Vulnerability(
+                title="No revocation mechanism advertised by certificate",
+                description=(
+                    "Certificate carries neither an Authority Information "
+                    "Access OCSP URL nor a CRL Distribution Point. Clients "
+                    "have no online way to learn whether the cert has been "
+                    "revoked. Public CAs always ship at least one of the "
+                    "two — absence is typical of self-signed certs or "
+                    "misissued certs."
+                ),
+                severity=RiskLevel.LOW,
+                cwe="CWE-295",
+                affected_asset_ids=affected,
+                references=(
+                    "https://www.rfc-editor.org/rfc/rfc5280",
+                    "https://www.rfc-editor.org/rfc/rfc6960",
+                ),
+            )
+        )
+
+    if info.get("must_staple", False):
+        findings.append(
+            Vulnerability(
+                title="OCSP Must-Staple asserted (RFC 7633)",
+                description=(
+                    "Certificate asserts the TLS Feature `status_request` "
+                    "extension (RFC 7633), instructing TLS clients to "
+                    "REQUIRE a stapled OCSP response at handshake time and "
+                    "fail if absent. This is a positive operational signal "
+                    "for revocation hygiene."
+                ),
+                severity=RiskLevel.INFO,
+                cwe=None,
+                affected_asset_ids=affected,
+                references=("https://www.rfc-editor.org/rfc/rfc7633",),
+            )
+        )
+    return findings
 
 
 def classify_chain_positions(chain: list[x509.Certificate]) -> list[str]:
@@ -529,6 +675,7 @@ class TLSScanner:
                     leaf_alg = extract_algorithm_from_cert(leaf_cert)
                     leaf_km = certificate_to_key_material(leaf_cert)
                     leaf_hash = extract_signature_hash_name(leaf_cert)
+                    leaf_revocation = extract_revocation_info(leaf_cert)
                     leaf_asset_id = f"tls://{target_repr}"
                     assets.append(
                         CryptoAsset(
@@ -549,6 +696,15 @@ class TLSScanner:
                                 "terminates_at_root": summary["terminates_at_root"],
                                 "chain_signature_hashes": summary["signature_hashes"],
                                 "chain_subjects": summary["subjects"],
+                                # Sprint 9g — revocation introspection
+                                "ocsp_responder_urls": leaf_revocation[
+                                    "ocsp_responder_urls"
+                                ],
+                                "ca_issuers_urls": leaf_revocation["ca_issuers_urls"],
+                                "crl_distribution_points": leaf_revocation[
+                                    "crl_distribution_points"
+                                ],
+                                "must_staple": leaf_revocation["must_staple"],
                             },
                         )
                     )
@@ -556,6 +712,9 @@ class TLSScanner:
                         assess_certificate(
                             leaf_alg, leaf_km, hash_name=leaf_hash, asset_id=leaf_asset_id
                         )
+                    )
+                    vulns.extend(
+                        assess_revocation(leaf_revocation, asset_id=leaf_asset_id)
                     )
                     # Emit one asset per non-leaf cert with the
                     # position-suffixed id contract from assess_chain.

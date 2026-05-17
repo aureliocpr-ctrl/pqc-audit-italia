@@ -28,6 +28,90 @@ before being sent to a qualified service. Anything beyond that
 (qualified accreditation paperwork, eIDAS conformance assessment)
 sits outside this repository.
 
+## [Unreleased] — Sprint 9g.1 (TLS revocation introspection, passive)
+
+Sprint 9g.1 (2026-05-17) extends the TLS scanner from "what crypto"
+to "what revocation mechanism": for every leaf cert it now surfaces
+the OCSP responder URLs (RFC 6960 / AIA), CA Issuers URLs, CRL
+Distribution Points (RFC 5280, 2.5.29.31), and the RFC 7633 TLS
+Feature / Must-Staple bit. This is the substrate every regulator
+asks about — "can clients learn the cert was revoked?" — and a
+leaf-cert-only crypto auditor cannot answer it.
+
+### Why this matters for a real audit
+
+- **Let's Encrypt retired OCSP on 2024-12-05** (announcement at
+  letsencrypt.org/2024/12/05/ending-ocsp/). Modern LE certs ship
+  CRL DP + AIA caIssuers, **no OCSP responder URL**. Many auditing
+  scripts written before 2024 flag this as a finding — wrongly.
+- **OCSP Must-Staple (RFC 7633)** is a positive operational signal:
+  the cert asks the client to require a stapled OCSP response and
+  fail otherwise. Surfacing it in the report lets executive summaries
+  recognize PA / banche that DO enforce stapling.
+- **No-revocation-mechanism certs** (no AIA-OCSP AND no CRL DP) are
+  the legacy / misissued / self-signed corner — worth a LOW finding.
+
+### Added
+
+- `pqc_audit.scanners.tls_scanner.extract_revocation_info(cert)` —
+  pure helper returning a 5-field dict (`ocsp_responder_urls`,
+  `ca_issuers_urls`, `crl_distribution_points`, `must_staple`,
+  `has_revocation_mechanism`). Never raises on missing extensions.
+- `pqc_audit.scanners.tls_scanner.assess_revocation(info, asset_id)` —
+  two finding types: LOW `No revocation mechanism advertised by
+  certificate` (CWE-295) when neither OCSP-URL nor CRL DP is present;
+  INFO `OCSP Must-Staple asserted (RFC 7633)` when the cert opts in.
+  Critically: a cert with CRL but no OCSP is **NOT** flagged
+  (anti-fuffa: matches the post-2024 Let's Encrypt pattern).
+- `TLSScanner.scan` extends the leaf asset metadata with four new
+  keys: `ocsp_responder_urls`, `ca_issuers_urls`,
+  `crl_distribution_points`, `must_staple`. Existing chain fields
+  remain unchanged.
+- 8 new pytest cases in `tests/unit/test_scanners_tls_revocation.py`
+  covering empty cert, full cert, CRL-only (LE post-2024), Must-
+  Staple-only, the LOW finding path, the INFO Must-Staple finding,
+  the "CRL is enough" non-flag path, and TLSScanner end-to-end
+  metadata propagation.
+
+### Empirically verified end-to-end (REAL endpoint)
+
+Scan of `www.agid.gov.it:443` with `PQC_AUDIT_FROZEN_AT=2026-05-17T00:00:00Z`:
+
+| Field | Observed value |
+|---|---|
+| `ocsp_responder_urls` | `[]` (Let's Encrypt retired OCSP in 2024) |
+| `ca_issuers_urls` | `['http://e7.i.lencr.org/']` |
+| `crl_distribution_points` | `['http://e7.c.lencr.org/76.crl']` |
+| `must_staple` | `False` |
+| LOW "No revocation mechanism" finding | **NOT emitted** (CRL is enough) |
+| INFO "Must-Staple" finding | **NOT emitted** (cert does not assert it) |
+
+Both negative cases are operationally correct: the scanner does NOT
+fabricate findings against a cert that ships modern revocation
+hygiene minus OCSP. The two existing HIGH findings (ECDSA-256 leaf
++ ECDSA-384 intermediate quantum-vulnerable, from Sprint 9d) are
+preserved.
+
+### Honest gap list (NOT done in 9g.1 — explicit roadmap)
+
+- **No active OCSP fetch.** We do not HTTP-GET the OCSP responder
+  URL to learn the cert's revocation status. Active revocation
+  checking (Sprint 9g.2) requires extra network round-trips, OCSP
+  responder rate-limiting concerns, and DER parse of RFC 6960
+  responses — separate sprint.
+- **No stapling verification.** Must-Staple says "client MUST receive
+  a stapled OCSP response". We can record the bit, but we don't
+  verify that the server actually staples (would require parsing
+  the TLS 1.3 `status_request` CertificateEntry extension —
+  inaccessible via stdlib `ssl`). Sprint 9g.3 candidate.
+- **No CRL download / parse.** We surface CRL DP URLs but do not
+  fetch the CRL. Active CRL parse would let us tell "cert is in the
+  CRL" — useful for audit, but slow (CRLs are MB-sized).
+- **Only the leaf cert** is introspected for revocation info. The
+  same fields exist on intermediate / root certs (e.g. an
+  intermediate has its own CRL DP pointing at the root's CRL).
+  Sprint 9g.4 could extend this.
+
 ## [Unreleased] — Sprint 9f (PQC hybrid handshake detection)
 
 Sprint 9f (2026-05-17) adds an **active** TLS 1.3 probe scanner that
