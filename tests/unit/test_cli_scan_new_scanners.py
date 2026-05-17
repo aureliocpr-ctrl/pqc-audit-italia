@@ -25,7 +25,13 @@ from typer.testing import CliRunner
 
 from pqc_audit.cli import app
 
+# JSON-producing invocations use the plain runner.
 runner = CliRunner()
+
+# BadParameter / --help assertions need Rich colour disabled, otherwise
+# Linux/macOS CI emits ANSI escapes that fragment ``--url`` / ``--path``
+# in the error panel. Same fix as test_cli_signature_lock_in.py.
+help_runner = CliRunner(env={"NO_COLOR": "1", "TERM": "dumb"})
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +292,7 @@ def test_scan_jwks_offline_path_flags_rsa_2048_as_high(tmp_path: Path) -> None:
 
 
 def test_scan_jwks_rejects_when_neither_url_nor_path() -> None:
-    result = runner.invoke(app, ["scan", "jwks", "--compact"])
+    result = help_runner.invoke(app, ["scan", "jwks", "--compact"])
     # typer.BadParameter → non-zero exit
     assert result.exit_code != 0
     combined = (result.stdout or "") + (result.stderr or "")
