@@ -28,6 +28,158 @@ before being sent to a qualified service. Anything beyond that
 (qualified accreditation paperwork, eIDAS conformance assessment)
 sits outside this repository.
 
+## [Unreleased] — Sprint 9j (PostgreSQL SSL probe via wire protocol)
+
+Sprint 9j (2026-05-17) opens the **database** axis of the audit
+toolkit, which until now covered only network TLS / certs / SSH /
+JWT / SAML / DNSSEC / mTLS / IaC / JWKS. The first database is
+PostgreSQL because it is the most common open-source choice for
+Italian PA backends.
+
+### Why a dedicated probe is necessary
+
+PostgreSQL servers do NOT speak TLS on connect — they speak the
+PostgreSQL wire protocol. A client that wants encryption must first
+send a 8-byte ``SSLRequest`` message:
+
+```
+00 00 00 08   ← Int32 BE length = 8
+04 d2 16 2f   ← Int32 BE magic = 80877103 (= 1234 MSW + 5679 LSW)
+```
+
+The server responds with **exactly one byte**:
+
+* ``'S'`` (0x53) — SSL supported, upgrade the socket to TLS;
+* ``'N'`` (0x4E) — SSL not supported, server expects plaintext only.
+
+A naive ``ssl.create_default_context().wrap_socket()`` against
+``host:5432`` would fail because the server is not yet in TLS state
+— the standard TLS probe would record an "error", losing the
+distinction between *server refused TLS* and *server up but no SSL*.
+This module implements the correct two-step probe.
+
+Source: PostgreSQL docs, Message Formats → SSLRequest
+(https://www.postgresql.org/docs/current/protocol-message-formats.html).
+
+### New module: `pqc_audit/scanners/postgres_ssl.py`
+
+```python
+from pqc_audit.scanners.postgres_ssl import (
+    SSL_REQUEST_BYTES,        # b"\x00\x00\x00\x08\x04\xd2\x16\x2f"
+    parse_ssl_response_byte,  # bytes -> "supported"/"not_supported"/"error"
+    probe_postgres_ssl,       # host, port -> 5-key dict
+)
+
+result = probe_postgres_ssl("db.example.com", 5432, timeout=5.0)
+# {"host": ..., "port": 5432,
+#  "ssl_status": "supported" | "not_supported" | "error",
+#  "error_message": Optional[str],
+#  "raw_response_hex": "53" | "4e" | ""}
+```
+
+`probe_postgres_ssl` catches `ConnectionRefusedError`, `TimeoutError`,
+`socket.gaierror`, and generic `OSError`, surfacing them via
+`ssl_status="error"` + `error_message` — the function never raises.
+
+### CLI wiring (production caller, closes the dead-code gap)
+
+```
+pqc-audit scan postgres-ssl --host db.example.com --port 5432 --timeout 5.0
+```
+
+Emits a JSON payload with stable top-level keys `host`, `port`,
+`probe` = `"postgres-sslrequest"`, `reference` (Postgres docs URL),
+and `result` (the 5-key dict).
+
+### Audit value
+
+A `not_supported` result on a production database carries weight:
+**NIS2 art. 21(2)(h) / D.Lgs. 138/2024 art. 24(2)(h)** require
+encryption in transit for confidential data. Future sprints will
+elevate this to a HIGH `Vulnerability` finding when integrated into
+the `Auditor.scan` pipeline.
+
+### Test coverage — REAL tests, not just monkeypatch
+
+Per the directive "test reali non solo empirici":
+
+* **12 unit tests** (monkeypatch-based, fast):
+  * 2x wire-format constants (`SSL_REQUEST_BYTES` exact bytes +
+    magic 80877103 decoding);
+  * 5x `parse_ssl_response_byte` cases (`'S'`, `'N'`, empty,
+    unknown byte, extra bytes ignored);
+  * 4x probe error handling (refused, timeout, gaierror, schema).
+* **3 integration tests** with an **in-process mock TCP server**
+  (real socket I/O, real 8-byte wire send, real `recv`, NO
+  monkeypatch — hermetic, no Postgres install required):
+  * `'S'` response → `ssl_status == "supported"`,
+    `raw_response_hex == "53"`;
+  * `'N'` response → `ssl_status == "not_supported"`,
+    `raw_response_hex == "4e"`;
+  * connection refused on unbound port → `ssl_status == "error"`.
+
+* **1 CLI integration test** drives `typer.testing.CliRunner` against
+  the mock TCP server and validates the JSON payload schema.
+
+Full suite: 608 passed, 4 skipped (preexisting).
+Ruff: clean.
+
+### Empirical E2E live
+
+```
+python -m pqc_audit scan postgres-ssl --host 127.0.0.1 --port 5432 --timeout 2.0
+```
+
+Output (no Postgres running on localhost — expected behavior):
+
+```json
+{
+  "host": "127.0.0.1",
+  "port": 5432,
+  "probe": "postgres-sslrequest",
+  "reference": "https://www.postgresql.org/docs/current/protocol-message-formats.html",
+  "result": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "ssl_status": "error",
+    "error_message": "timed out",
+    "raw_response_hex": ""
+  }
+}
+```
+
+The pipeline (CLI → probe → socket I/O → JSON) is verified end-to-end
+on the real subprocess. The mock-server integration tests verify the
+same pipeline against a server that actually answers with the wire
+bytes — a strict superset of the empirical CLI verification.
+
+### Honest gap list
+
+- **No MySQL / MariaDB / Oracle / MSSQL probes yet** — each speaks
+  its own pre-TLS wire dance. Sprint 9j.2 et seq. will add them.
+- **No `Vulnerability` emission** — the probe returns a raw dict.
+  Wiring into `Auditor.scan` to produce a HIGH CWE-319
+  (cleartext transmission) finding when `ssl_status="not_supported"`
+  is a separate sprint.
+- **Probe does NOT actually negotiate TLS** after receiving `'S'` —
+  it only verifies the server is *willing* to upgrade. Reusing the
+  existing `TLSScanner` chain extraction code post-upgrade is a
+  future sprint.
+
+### Critic gate
+
+`critic-orchestrator` 3-worker adversarial review (211s, $1.96):
+
+| Worker | Verdict | Confidence | Note |
+|---|---|---|---|
+| falsification | claim_holds | 0.97 | Stash production module → 15 test fail con `ImportError: cannot import name 'postgres_ssl' from 'pqc_audit.scanners'`. Restore → 15/15 pass in 5.14s, 94% coverage sul nuovo modulo. |
+| caller_verification | claim_holds | 0.97 | `probe_postgres_ssl` invocata a `cli.py:212` dentro `scan_postgres_ssl_cmd` (decorator `@scan_app.command("postgres-ssl")` a `cli.py:192`, mount `app.add_typer(scan_app, name="scan")` a `cli.py:60`). User entry point: `pqc-audit scan postgres-ssl --host <H> --port <P>`. |
+| counterexample | claim_holds | 0.88 | 10 invarianti verificati: wire format magic 80877103, `parse_ssl_response_byte` boundary (empty/single/unknown/extra), error handling completo OSError-subclass (BrokenPipeError, ConnectionResetError, InterruptedError tutti catched), `contextlib.suppress(OSError)` no socket leak, CliRunner sub-app dispatch corretto, mock-server hermetic (bind+listen prima di thread.start), `raw_response_hex` lowercase coerente. **PostgreSQL `ErrorResponse` ('E' 0x45) → classificato `error` correttamente.** No counterexample. |
+
+**Consensus: hold 3-0-0.**
+
+---
+
 ## [Unreleased] — Sprint 9f.2 (ML-DSA signature_algorithms TLS 1.3 probe)
 
 Sprint 9f.2 (2026-05-17) is the signature-side companion to Sprint 9f

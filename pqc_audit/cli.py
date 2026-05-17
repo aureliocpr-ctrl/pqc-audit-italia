@@ -189,6 +189,38 @@ def scan_pqc_mldsa_sig_cmd(
     typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
 
 
+@scan_app.command("postgres-ssl")
+def scan_postgres_ssl_cmd(
+    host: str = typer.Option(..., "--host", help="Hostname or IP of the PostgreSQL server."),
+    port: int = typer.Option(5432, "--port", help="TCP port (default: 5432)."),
+    timeout: float = typer.Option(5.0, "--timeout", help="Socket timeout in seconds."),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Probe a PostgreSQL endpoint for SSL/TLS support via the wire-protocol SSLRequest.
+
+    PostgreSQL servers do NOT begin with a TLS ClientHello — a client
+    must first send the 8-byte SSLRequest message (length=8, magic
+    80877103). The server responds with one byte: ``'S'`` (SSL
+    supported, upgrade to TLS) or ``'N'`` (plaintext only).
+
+    A ``'N'`` response on a production database carries audit weight:
+    NIS2 art. 21(2)(h) / D.Lgs. 138/2024 art. 24(2)(h) require
+    encryption in transit for confidential data.
+    """
+    from pqc_audit.scanners.postgres_ssl import probe_postgres_ssl  # noqa: PLC0415
+
+    result = probe_postgres_ssl(host, port, timeout=timeout)
+    payload: dict = {
+        "host": host,
+        "port": port,
+        "probe": "postgres-sslrequest",
+        "reference": "https://www.postgresql.org/docs/current/protocol-message-formats.html",
+        "result": result,
+    }
+    indent = 2 if pretty else None
+    typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
+
+
 @scan_app.command("certs")
 def scan_certs_cmd(
     path: str = typer.Option(
