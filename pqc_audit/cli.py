@@ -35,6 +35,10 @@ from pqc_audit.reporters.markdown_reporter import render as render_markdown
 from pqc_audit.reporters.pdf_reporter import render as render_pdf
 from pqc_audit.reporters.sarif_reporter import render as render_sarif
 from pqc_audit.scanners.cert_scanner import CertificateScanner
+from pqc_audit.scanners.dnssec_scanner import DNSSECScanner
+from pqc_audit.scanners.jwt_scanner import JWTScanner
+from pqc_audit.scanners.mtls_scanner import MTLSScanner
+from pqc_audit.scanners.saml_scanner import SAMLScanner
 from pqc_audit.scanners.ssh_scanner import SSHScanner
 
 app = typer.Typer(
@@ -155,6 +159,126 @@ def scan_ssh_cmd(
         scanners=[SSHScanner()],
     )
     target = ScanTarget(type="ssh", host=host, port=port)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
+
+
+@scan_app.command("jwt")
+def scan_jwt_cmd(
+    path: str = typer.Option(
+        ..., "--path", help="File containing JWT compact-form tokens (one per line)."
+    ),
+    policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    data_sensitivity_years: int = typer.Option(
+        10,
+        "--data-sensitivity-years",
+        help="Assumed lifetime of confidential data, drives HNDL scoring (default: 10).",
+    ),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Scan a file of JWT / JOSE tokens and emit a JSON report.
+
+    Each non-blank, non-comment line is parsed as a compact-form JWT.
+    Signature verification and JWKS fetch are out of scope: this is a
+    crypto-discovery pass focused on the declared JOSE ``alg``.
+    """
+    auditor = Auditor(
+        policy=policy,
+        data_sensitivity_years=data_sensitivity_years,
+        scanners=[JWTScanner()],
+    )
+    target = ScanTarget(type="token", path=path)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
+
+
+@scan_app.command("dnssec")
+def scan_dnssec_cmd(
+    path: str = typer.Option(
+        ...,
+        "--path",
+        help="DNS zone file or `dig +dnssec` output containing DNSKEY records.",
+    ),
+    policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    data_sensitivity_years: int = typer.Option(
+        10,
+        "--data-sensitivity-years",
+        help="Assumed lifetime of confidential data, drives HNDL scoring (default: 10).",
+    ),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Scan a DNSSEC zone (DNSKEY records) and emit a JSON report.
+
+    Algorithm numbers are mapped against the IANA DNSSEC registry and
+    RFC 8624 implementation status. RRSIG/NSEC/CDS records covering
+    DNSKEY are correctly ignored (regression target).
+    """
+    auditor = Auditor(
+        policy=policy,
+        data_sensitivity_years=data_sensitivity_years,
+        scanners=[DNSSECScanner()],
+    )
+    target = ScanTarget(type="config", path=path)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
+
+
+@scan_app.command("saml")
+def scan_saml_cmd(
+    path: str = typer.Option(
+        ..., "--path", help="SAML XML file (Response / Assertion / IdP metadata)."
+    ),
+    policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    data_sensitivity_years: int = typer.Option(
+        10,
+        "--data-sensitivity-years",
+        help="Assumed lifetime of confidential data, drives HNDL scoring (default: 10).",
+    ),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Scan a SAML XML payload and emit a JSON report.
+
+    The parser is XXE-safe (defusedxml). Each ``ds:SignatureMethod``,
+    ``ds:DigestMethod`` and ``xenc:EncryptionMethod`` URI is mapped
+    against the XMLDSig / XMLEnc registries (W3C, RFC 6931).
+    """
+    auditor = Auditor(
+        policy=policy,
+        data_sensitivity_years=data_sensitivity_years,
+        scanners=[SAMLScanner()],
+    )
+    target = ScanTarget(type="config", path=path)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
+
+
+@scan_app.command("mtls")
+def scan_mtls_cmd(
+    path: str = typer.Option(
+        ...,
+        "--path",
+        help="PEM-bundled client certificate chain (leaf first, then intermediates, root).",
+    ),
+    policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    data_sensitivity_years: int = typer.Option(
+        10,
+        "--data-sensitivity-years",
+        help="Assumed lifetime of confidential data, drives HNDL scoring (default: 10).",
+    ),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Scan a mutual-TLS client certificate chain and emit a JSON report.
+
+    Adds the structural mTLS checks on top of the shared TLS assessor:
+    leaf ``digitalSignature`` Key Usage, leaf ``clientAuth`` Extended
+    Key Usage, intermediate CA constraints, and chain consistency.
+    """
+    auditor = Auditor(
+        policy=policy,
+        data_sensitivity_years=data_sensitivity_years,
+        scanners=[MTLSScanner()],
+    )
+    target = ScanTarget(type="certs", path=path)
     report = asyncio.run(auditor.scan([target]))
     typer.echo(render_json(report, pretty=pretty))
 
