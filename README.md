@@ -5,7 +5,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Status: Beta](https://img.shields.io/badge/status-beta-yellow)](#roadmap)
-[![Tests: 403 green](https://img.shields.io/badge/tests-403%20green-success)](#development)
+[![Tests: 661 green](https://img.shields.io/badge/tests-661%20green-success)](#development)
 [![Coverage 90%](https://img.shields.io/badge/coverage-90%25-success)](#development)
 [![Ruff zero](https://img.shields.io/badge/ruff-zero-success)](#development)
 [![Mypy strict](https://img.shields.io/badge/mypy-strict-success)](#development)
@@ -53,6 +53,15 @@ It targets the Italian regulatory landscape (NIS2 D.Lgs. 138/2024, DORA Reg. (EU
 | **Composable rule packs** | **Ready (Sprint 1+4)** | **6 bundled YAML packs: NIST core, EU CRA+DORA+eIDAS2, IT NIS2 recepimento, AGID ABSC, FIPS strict, audit-evidence** |
 | **IaC scanner** | **Ready (Sprint 4)** | **Terraform / CloudFormation / Kubernetes — AWS KMS, ACM, TLS version pinning, RC4/3DES/MD5/SHA-1; CWE-400 walker caps** |
 | **JWKS endpoint scanner** | **Ready (Sprint 5)** | **RFC 7517 live HTTPS fetch + offline JSON file; SSRF guard (CWE-918); 1 MiB cap; refuses redirects + non-HTTPS** |
+| **TLS chain validation + crypto verify** | **Ready (Sprint 9d / 9d.2)** | **Per-cert chain positions (leaf / intermediate-N / root), cryptographic signature verification, missing-root anti-fuffa (LE 2-cert pattern verifiable=False)** |
+| **Trust anchor resolver + CA pedigree** | **Ready (Sprint 9d.3 / 9d.4)** | **Cross-platform resolver (system_ca_bundle / certifi / explicit override), canonical Name matching cross-encoding, pedigree: qualified_it_tsp / commercial_global / unknown; markdown report section "## Trust anchor — CA radice"** |
+| **AgID Trusted List parser (eIDAS)** | **Ready (Sprint 9d.5 / 9d.6)** | **Fetches https://eidas.agid.gov.it/TL/TSL-IT.xml live (ETSI TS 119 612), parses qualified-CA cert list, cross-checks resolved root → pedigree upgraded to `qualified_it_tsp_verified_via_tsl` on TSL match; CLI `pqc-audit compliance agid-tsl` standalone + `scan tls --agid-tsl` flag** |
+| **PQC hybrid TLS handshake probe** | **Ready (Sprint 9f)** | **Probes 3 IETF draft-ietf-tls-ecdhe-mlkem-04 hybrid groups: SecP256r1MLKEM768 (0x11EB), X25519MLKEM768 (0x11EC), SecP384r1MLKEM1024 (0x11ED). Requires openssl 3.5+** |
+| **ML-DSA signature_algorithms probe** | **Ready (Sprint 9f.2)** | **Probes 3 draft-ietf-tls-mldsa-03 codepoints: MLDSA44 (0x0904), MLDSA65 (0x0905), MLDSA87 (0x0906). SLH-DSA intentionally excluded — no TLS 1.3 codepoint registered as of 2026-05-17** |
+| **TLS revocation introspection** | **Ready (Sprint 9g.1)** | **Passive OCSP / CRL / Must-Staple discovery from cert extensions; no false-positives on Let's Encrypt post-2024 OCSP retirement** |
+| **NIS2 / D.Lgs. 138/2024 art. 24 mapping** | **Ready (Sprint 9h / 9h-integration)** | **Title-pattern → lettered measure mapping (a-j); inline section in standard Markdown report with sanctions art. 38 citation** |
+| **PostgreSQL SSL probe** | **Ready (Sprint 9j / 9j.3)** | **Wire-protocol SSLRequest (8 bytes magic 80877103); HIGH CWE-319 Vulnerability on `'N'` response; integrated into Auditor pipeline as PostgresSSLScanner** |
+| **MySQL / MariaDB SSL probe** | **Ready (Sprint 9j.2 / 9j.3)** | **Passive read of Initial Handshake v10 + CLIENT_SSL capability bit (0x0800); HIGH CWE-319 Vulnerability when bit clear; integrated as MySQLSSLScanner with `ScanCategory.DATABASE`** |
 | **Tauri desktop viewer** | **Ready (Sprint 2+3+4)** | **Cross-OS read-only viewer, ~47 kB gzipped, no network egress; pill-shaped severity badges** |
 | **CI: sigstore + SLSA L3** | **Ready (Sprint 1)** | **PyPI Trusted Publishing OIDC + sigstore keyless + SLSA v1.0 provenance** |
 | Compliance mapping | Ready | NIS2 art. 21, DORA art. 9, AgID Linee Guida, ISO 27001 A.10 |
@@ -136,6 +145,35 @@ quantum-vulnerable primitives per NIST IR 8547.
 ```bash
 pqc-audit scan ssh --host server.example.it --port 22 \
                    --policy nist_baseline
+```
+
+### Sprint 9 series (May 2026) — new subcommands
+
+```bash
+# TLS chain audit with AgID TSL (eIDAS) trust-anchor cross-check.
+# Upgrades pedigree to "qualified_it_tsp_verified_via_tsl" when the
+# resolved root is in the live TSL.
+pqc-audit scan tls --host www.aruba.it --port 443 --agid-tsl
+
+# Inspect the live AgID Trusted List (56 TSPs + ~200 qualified CAs
+# as of 2026-05-17). Verify a specific subject DN against the
+# qualified-CA list with --check-subject.
+pqc-audit compliance agid-tsl
+pqc-audit compliance agid-tsl --check-subject "CN=Actalis Authentication Root CA,O=Actalis S.p.A.,C=IT"
+
+# PQC hybrid key-exchange probe (IETF draft-ietf-tls-ecdhe-mlkem-04).
+pqc-audit scan pqc-hybrid --host cloudflare.com --port 443
+
+# ML-DSA signature_algorithms TLS 1.3 probe (draft-ietf-tls-mldsa-03).
+pqc-audit scan pqc-mldsa-sig --host google.com --port 443
+
+# PostgreSQL SSL via wire-protocol SSLRequest. Default emits full
+# AuditReport with HIGH CWE-319 Vulnerability when SSL is not
+# supported (NIS2 art. 24(2)(h)). --raw for probe-dict legacy mode.
+pqc-audit scan postgres-ssl --host db.example.it --port 5432
+
+# MySQL / MariaDB SSL via passive Initial Handshake v10 read.
+pqc-audit scan mysql-ssl --host db.example.it --port 3306
 ```
 
 ### Re-render reports
