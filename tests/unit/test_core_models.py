@@ -28,7 +28,8 @@ def test_risk_level_from_string() -> None:
 def test_scan_category_enum() -> None:
     from pqc_audit.core.models import ScanCategory
 
-    expected = {"NETWORK", "FILESYSTEM", "BINARY", "CODE", "CONFIG"}
+    # Sprint 9j.3 added DATABASE for PostgreSQL/MySQL SSL probes.
+    expected = {"NETWORK", "FILESYSTEM", "BINARY", "CODE", "CONFIG", "DATABASE"}
     assert {c.name for c in ScanCategory} == expected
 
 

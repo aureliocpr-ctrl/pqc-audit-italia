@@ -191,6 +191,18 @@ _TITLE_PATTERNS: tuple[tuple[re.Pattern[str], tuple[NIS2Article, ...]], ...] = (
         re.compile(r"ocsp must-staple", re.IGNORECASE),
         (NIS2Article.ART_24_2_H,),
     ),
+    # Sprint 9j.3 — database cleartext (CWE-319). Both (h) crittografia
+    # and (j) comunicazioni sicure apply because a plaintext DB
+    # connection violates encryption-in-transit AND the broader
+    # "secure communications" obligation.
+    (
+        re.compile(r"postgres(?:ql)?\s+allows\s+non-?ssl", re.IGNORECASE),
+        (NIS2Article.ART_24_2_H, NIS2Article.ART_24_2_J),
+    ),
+    (
+        re.compile(r"mysql\s+allows\s+non-?ssl", re.IGNORECASE),
+        (NIS2Article.ART_24_2_H, NIS2Article.ART_24_2_J),
+    ),
 )
 
 

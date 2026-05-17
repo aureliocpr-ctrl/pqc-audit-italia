@@ -38,6 +38,17 @@ import contextlib
 import socket
 import struct
 
+from pqc_audit.core.clock import frozen_now
+from pqc_audit.core.models import (
+    Algorithm,
+    CryptoAsset,
+    RiskLevel,
+    ScanCategory,
+    ScanResult,
+    Vulnerability,
+)
+from pqc_audit.scanners.base import ScanTarget
+
 CLIENT_SSL_BIT: int = 0x0800  # 2048, bit 11
 
 # Bytes after server_version NUL + fixed prefix in payload until the
@@ -193,3 +204,101 @@ def probe_mysql_ssl(
 
     parsed = parse_handshake_v10_capabilities(payload)
     return {"host": host, "port": port, **parsed}
+
+
+# ---------------------------------------------------------------------
+# Scanner class — Sprint 9j.3 "integrazione totale".
+# ---------------------------------------------------------------------
+
+
+class MySQLSSLScanner:
+    """Scanner protocol implementation for MySQL/MariaDB SSL probing.
+
+    Emits a single :class:`CryptoAsset` (category DATABASE) per
+    target, plus a HIGH :class:`Vulnerability` with CWE-319 when
+    the server advertises no ``CLIENT_SSL`` capability bit — citable
+    verbatim under D.Lgs. 138/2024 art. 24(2)(h).
+    """
+
+    name: str = "mysql-ssl"
+    category: ScanCategory = ScanCategory.DATABASE
+
+    async def is_applicable(self, target: ScanTarget) -> bool:
+        return target.type == "mysql-ssl"
+
+    async def scan(self, target: ScanTarget) -> ScanResult:
+        host = target.host or ""
+        port = int(target.port or 3306)
+        started = frozen_now()
+        probe = probe_mysql_ssl(host, port)
+        finished = frozen_now()
+
+        asset_id = f"mysql-ssl://{host}:{port}"
+        location = f"{host}:{port}"
+        status = probe.get("ssl_status", "error")
+        algo_name = (
+            "MYSQL-TLS-CAPABLE"
+            if status == "supported"
+            else "MYSQL-PLAINTEXT"
+            if status == "not_supported"
+            else "MYSQL-UNKNOWN"
+        )
+        asset = CryptoAsset(
+            asset_id=asset_id,
+            category=ScanCategory.DATABASE,
+            algorithm=Algorithm(name=algo_name),
+            location=location,
+            discovered_at=started,
+            metadata={
+                "probe": "mysql-handshake-v10-capability-flags",
+                "ssl_status": status,
+                "server_version": probe.get("server_version") or "",
+                "capability_flags_hex": probe.get("capability_flags_hex") or "",
+                "error_message": probe.get("error_message") or "",
+            },
+        )
+
+        vulns: list[Vulnerability] = []
+        if status == "not_supported":
+            vulns.append(
+                Vulnerability(
+                    title="MySQL allows non-SSL connection",
+                    description=(
+                        f"MySQL/MariaDB server at {location} advertised an "
+                        "Initial Handshake Packet without the CLIENT_SSL "
+                        "capability bit (0x0800). The server cannot upgrade "
+                        "to TLS — confidential data transits in cleartext."
+                    ),
+                    severity=RiskLevel.HIGH,
+                    cwe="CWE-319",
+                    affected_asset_ids=(asset_id,),
+                    references=(
+                        "https://dev.mysql.com/doc/refman/8.0/en/encrypted-connections.html",
+                        "https://eur-lex.europa.eu/eli/dir/2022/2555/oj",
+                    ),
+                )
+            )
+        elif status == "error":
+            vulns.append(
+                Vulnerability(
+                    title="MySQL SSL probe error",
+                    description=(
+                        f"MySQL SSL probe against {location} could not "
+                        f"complete: {probe.get('error_message') or 'unknown'}. "
+                        "The audit cannot make a positive or negative "
+                        "statement about SSL."
+                    ),
+                    severity=RiskLevel.INFO,
+                    cwe=None,
+                    affected_asset_ids=(asset_id,),
+                )
+            )
+
+        return ScanResult(
+            scanner_name=self.name,
+            target=location,
+            assets=[asset],
+            vulnerabilities=vulns,
+            started_at=started,
+            finished_at=finished,
+        )

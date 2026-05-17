@@ -27,6 +27,17 @@ from __future__ import annotations
 import contextlib
 import socket
 
+from pqc_audit.core.clock import frozen_now
+from pqc_audit.core.models import (
+    Algorithm,
+    CryptoAsset,
+    RiskLevel,
+    ScanCategory,
+    ScanResult,
+    Vulnerability,
+)
+from pqc_audit.scanners.base import ScanTarget
+
 # 8 bytes: Int32(8) length + Int32(80877103) magic.
 SSL_REQUEST_BYTES: bytes = b"\x00\x00\x00\x08\x04\xd2\x16\x2f"
 
@@ -105,3 +116,100 @@ def probe_postgres_ssl(
         "error_message": None if status != "error" else f"unexpected response: {raw_hex!r}",
         "raw_response_hex": raw_hex,
     }
+
+
+# ---------------------------------------------------------------------
+# Scanner class — Sprint 9j.3 "integrazione totale".
+# Wraps the probe in the BaseScanner protocol so it participates in
+# Auditor.scan and produces audit-grade CryptoAsset + Vulnerability.
+# ---------------------------------------------------------------------
+
+
+class PostgresSSLScanner:
+    """Scanner protocol implementation for PostgreSQL SSL probing.
+
+    Emits a single :class:`CryptoAsset` (category DATABASE) per
+    target, plus a HIGH :class:`Vulnerability` with CWE-319 when
+    the server refuses SSL — citable verbatim under D.Lgs. 138/2024
+    art. 24(2)(h) via :mod:`pqc_audit.compliance.nis2`.
+    """
+
+    name: str = "postgres-ssl"
+    category: ScanCategory = ScanCategory.DATABASE
+
+    async def is_applicable(self, target: ScanTarget) -> bool:
+        return target.type == "postgres-ssl"
+
+    async def scan(self, target: ScanTarget) -> ScanResult:
+        host = target.host or ""
+        port = int(target.port or 5432)
+        started = frozen_now()
+        probe = probe_postgres_ssl(host, port)
+        finished = frozen_now()
+
+        asset_id = f"postgres-ssl://{host}:{port}"
+        location = f"{host}:{port}"
+        # The "algorithm" for a database SSL asset is the negotiated
+        # cipher — but we don't actually upgrade in this probe. We
+        # surface "TLS-CAPABLE" or "PLAINTEXT" as a synthetic
+        # placeholder so the asset record is honest.
+        algo_name = "POSTGRES-TLS-CAPABLE" if probe["ssl_status"] == "supported" else (
+            "POSTGRES-PLAINTEXT" if probe["ssl_status"] == "not_supported" else "POSTGRES-UNKNOWN"
+        )
+        asset = CryptoAsset(
+            asset_id=asset_id,
+            category=ScanCategory.DATABASE,
+            algorithm=Algorithm(name=algo_name),
+            location=location,
+            discovered_at=started,
+            metadata={
+                "probe": "postgres-sslrequest",
+                "ssl_status": probe["ssl_status"],
+                "raw_response_hex": probe["raw_response_hex"],
+                "error_message": probe["error_message"] or "",
+            },
+        )
+
+        vulns: list[Vulnerability] = []
+        if probe["ssl_status"] == "not_supported":
+            vulns.append(
+                Vulnerability(
+                    title="PostgreSQL allows non-SSL connection",
+                    description=(
+                        f"PostgreSQL server at {location} responded 'N' to the "
+                        "SSLRequest message, indicating it accepts plaintext "
+                        "connections. Confidential data transiting this "
+                        "endpoint is cleartext on the wire."
+                    ),
+                    severity=RiskLevel.HIGH,
+                    cwe="CWE-319",
+                    affected_asset_ids=(asset_id,),
+                    references=(
+                        "https://www.postgresql.org/docs/current/ssl-tcp.html",
+                        "https://eur-lex.europa.eu/eli/dir/2022/2555/oj",
+                    ),
+                )
+            )
+        elif probe["ssl_status"] == "error":
+            vulns.append(
+                Vulnerability(
+                    title="PostgreSQL SSL probe error",
+                    description=(
+                        f"PostgreSQL SSL probe against {location} could not "
+                        f"complete: {probe['error_message']}. The audit cannot "
+                        "make a positive or negative statement about SSL."
+                    ),
+                    severity=RiskLevel.INFO,
+                    cwe=None,
+                    affected_asset_ids=(asset_id,),
+                )
+            )
+
+        return ScanResult(
+            scanner_name=self.name,
+            target=location,
+            assets=[asset],
+            vulnerabilities=vulns,
+            started_at=started,
+            finished_at=finished,
+        )

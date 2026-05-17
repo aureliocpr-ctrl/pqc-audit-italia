@@ -194,31 +194,43 @@ def scan_postgres_ssl_cmd(
     host: str = typer.Option(..., "--host", help="Hostname or IP of the PostgreSQL server."),
     port: int = typer.Option(5432, "--port", help="TCP port (default: 5432)."),
     timeout: float = typer.Option(5.0, "--timeout", help="Socket timeout in seconds."),
+    raw: bool = typer.Option(
+        False, "--raw", help="Emit raw probe dict instead of full AuditReport."
+    ),
     pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
 ) -> None:
-    """Probe a PostgreSQL endpoint for SSL/TLS support via the wire-protocol SSLRequest.
+    """Probe PostgreSQL for SSL and emit a full AuditReport (Sprint 9j.3).
 
     PostgreSQL servers do NOT begin with a TLS ClientHello — a client
-    must first send the 8-byte SSLRequest message (length=8, magic
-    80877103). The server responds with one byte: ``'S'`` (SSL
-    supported, upgrade to TLS) or ``'N'`` (plaintext only).
+    must first send the 8-byte SSLRequest message. The server replies
+    'S' (SSL supported) or 'N' (plaintext only).
 
-    A ``'N'`` response on a production database carries audit weight:
-    NIS2 art. 21(2)(h) / D.Lgs. 138/2024 art. 24(2)(h) require
-    encryption in transit for confidential data.
+    Default: the probe runs via PostgresSSLScanner inside the standard
+    Auditor pipeline, so output is a full AuditReport JSON with a HIGH
+    CWE-319 Vulnerability auto-mapped to D.Lgs. 138/2024 art. 24(2)(h)+(j)
+    when SSL is not supported. Pass ``--raw`` for the probe dict only.
     """
-    from pqc_audit.scanners.postgres_ssl import probe_postgres_ssl  # noqa: PLC0415
+    if raw:
+        from pqc_audit.scanners.postgres_ssl import probe_postgres_ssl  # noqa: PLC0415
 
-    result = probe_postgres_ssl(host, port, timeout=timeout)
-    payload: dict = {
-        "host": host,
-        "port": port,
-        "probe": "postgres-sslrequest",
-        "reference": "https://www.postgresql.org/docs/current/protocol-message-formats.html",
-        "result": result,
-    }
-    indent = 2 if pretty else None
-    typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
+        result = probe_postgres_ssl(host, port, timeout=timeout)
+        payload: dict = {
+            "host": host,
+            "port": port,
+            "probe": "postgres-sslrequest",
+            "reference": "https://www.postgresql.org/docs/current/protocol-message-formats.html",
+            "result": result,
+        }
+        indent = 2 if pretty else None
+        typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
+        return
+
+    from pqc_audit.scanners.postgres_ssl import PostgresSSLScanner  # noqa: PLC0415
+
+    auditor = Auditor(scanners=[PostgresSSLScanner()])
+    target = ScanTarget(type="postgres-ssl", host=host, port=port)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
 
 
 @scan_app.command("mysql-ssl")
@@ -226,36 +238,48 @@ def scan_mysql_ssl_cmd(
     host: str = typer.Option(..., "--host", help="Hostname or IP of the MySQL/MariaDB server."),
     port: int = typer.Option(3306, "--port", help="TCP port (default: 3306)."),
     timeout: float = typer.Option(5.0, "--timeout", help="Socket timeout in seconds."),
+    raw: bool = typer.Option(
+        False, "--raw", help="Emit raw probe dict instead of full AuditReport."
+    ),
     pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
 ) -> None:
-    """Probe a MySQL / MariaDB endpoint for SSL support via passive handshake read.
+    """Probe MySQL/MariaDB for SSL and emit a full AuditReport (Sprint 9j.3).
 
     MySQL servers speak first: on TCP connect they send the Initial
-    Handshake Packet (Protocol::HandshakeV10) which advertises
-    server capabilities. The CLIENT_SSL bit (0x0800, bit 11) inside
-    capability_flags_1 indicates whether the server supports
-    encrypted connections. The probe is purely passive — no client
-    request, no perturbation of server state.
+    Handshake Packet (Protocol::HandshakeV10) which advertises server
+    capabilities. The CLIENT_SSL bit (0x0800, bit 11) inside
+    capability_flags_1 indicates SSL support. Probe is purely
+    passive — no perturbation.
 
-    Audit value: a server without CLIENT_SSL violates NIS2 art.
-    21(2)(h) / D.Lgs. 138/2024 art. 24(2)(h) on cleartext
-    transmission of confidential data.
+    Default: probe runs via MySQLSSLScanner inside Auditor pipeline,
+    output is a full AuditReport with HIGH CWE-319 Vulnerability
+    auto-mapped to D.Lgs. 138/2024 art. 24(2)(h)+(j) when SSL is not
+    supported. Pass ``--raw`` for the probe dict only.
     """
-    from pqc_audit.scanners.mysql_ssl import probe_mysql_ssl  # noqa: PLC0415
+    if raw:
+        from pqc_audit.scanners.mysql_ssl import probe_mysql_ssl  # noqa: PLC0415
 
-    result = probe_mysql_ssl(host, port, timeout=timeout)
-    payload: dict = {
-        "host": host,
-        "port": port,
-        "probe": "mysql-handshake-v10-capability-flags",
-        "reference": (
-            "https://dev.mysql.com/doc/dev/mysql-server/latest/"
-            "page_protocol_connection_phase_packets_protocol_handshake_v10.html"
-        ),
-        "result": result,
-    }
-    indent = 2 if pretty else None
-    typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
+        result = probe_mysql_ssl(host, port, timeout=timeout)
+        payload: dict = {
+            "host": host,
+            "port": port,
+            "probe": "mysql-handshake-v10-capability-flags",
+            "reference": (
+                "https://dev.mysql.com/doc/dev/mysql-server/latest/"
+                "page_protocol_connection_phase_packets_protocol_handshake_v10.html"
+            ),
+            "result": result,
+        }
+        indent = 2 if pretty else None
+        typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
+        return
+
+    from pqc_audit.scanners.mysql_ssl import MySQLSSLScanner  # noqa: PLC0415
+
+    auditor = Auditor(scanners=[MySQLSSLScanner()])
+    target = ScanTarget(type="mysql-ssl", host=host, port=port)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
 
 
 @scan_app.command("certs")

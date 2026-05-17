@@ -46,6 +46,7 @@ class ScanCategory(StrEnum):
     BINARY = "BINARY"
     CODE = "CODE"
     CONFIG = "CONFIG"
+    DATABASE = "DATABASE"
 
 
 class Algorithm(BaseModel):

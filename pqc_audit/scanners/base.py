@@ -29,6 +29,8 @@ TargetType = Literal[
     "iac",
     "jwks",
     "pqc-hybrid",
+    "postgres-ssl",
+    "mysql-ssl",
 ]
 
 
@@ -45,6 +47,8 @@ _TYPE_TO_CATEGORY: dict[str, ScanCategory] = {
     "iac": ScanCategory.CODE,
     "jwks": ScanCategory.NETWORK,
     "pqc-hybrid": ScanCategory.NETWORK,
+    "postgres-ssl": ScanCategory.DATABASE,
+    "mysql-ssl": ScanCategory.DATABASE,
 }
 
 

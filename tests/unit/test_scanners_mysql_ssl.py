@@ -296,7 +296,9 @@ def test_cli_scan_mysql_ssl_against_mock_emits_valid_json() -> None:
     runner = CliRunner()
     result = runner.invoke(
         app,
-        ["scan", "mysql-ssl", "--host", "127.0.0.1", "--port", str(port), "--timeout", "5.0"],
+        # --raw preserves the pre-9j.3 probe-dict CLI contract.
+        ["scan", "mysql-ssl", "--host", "127.0.0.1", "--port", str(port),
+         "--timeout", "5.0", "--raw"],
     )
     done.wait(timeout=5.0)
     assert result.exit_code == 0, f"CLI exited {result.exit_code}: {result.stdout}"
