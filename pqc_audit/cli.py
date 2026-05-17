@@ -529,6 +529,45 @@ def cbom_cmd(
         typer.echo(text)
 
 
+@app.command("hash")
+def hash_cmd(
+    input_path: str = typer.Option(
+        ...,
+        "--input",
+        "-i",
+        help="Path to a JSON scan report (output of `scan tls/certs/ssh/...`). Use '-' for stdin.",
+    ),
+) -> None:
+    """Recompute the legal SHA-256 fingerprint of a report (Sprint 8 step A).
+
+    A regulator or PA procurement reviewer reads the auditor's
+    published digest, parses the report's JSON, then invokes::
+
+        pqc-audit hash --input report.json
+
+    and compares the printed digest to the published one. The 64-hex
+    output is the SHA-256 of the byte-stable canonical JSON form of
+    the parsed report — see ``pqc_audit.reporters.canonical`` for the
+    canonicalization contract. Stdin is supported via ``-i -``.
+    """
+    from pqc_audit.reporters.canonical import report_sha256  # noqa: PLC0415
+
+    if input_path == "-":
+        payload_text = sys.stdin.read()
+    else:
+        try:
+            payload_text = Path(input_path).read_text(encoding="utf-8")
+        except FileNotFoundError as e:
+            typer.echo(f"error: cannot read --input: {e}", err=True)
+            raise typer.Exit(code=1) from e
+    try:
+        parsed = json.loads(payload_text)
+    except json.JSONDecodeError as e:
+        typer.echo(f"error: invalid JSON: {e}", err=True)
+        raise typer.Exit(code=2) from e
+    typer.echo(report_sha256(parsed))
+
+
 @app.command("batch")
 def batch_cmd(
     targets: str | None = typer.Option(

@@ -110,6 +110,35 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   guard, the malformed JSON path, and the live fetch via
   monkeypatch. 2 CLI tests for the subcommand wiring.
 
+### Added — `pqc-audit hash` CLI subcommand (Sprint 8 step B)
+
+New subcommand that closes the verification loop opened by step A.
+Usage:
+
+```
+pqc-audit hash --input report.json     # file path
+pqc-audit hash --input -                # stdin
+```
+
+Prints the SHA-256 of the canonical JSON form of the parsed report
+(lowercase 64-hex). A regulator who receives `report.json` and the
+auditor's published digest runs this command and compares — match
+means the report has not been tampered with since publication.
+
+Tests: 7 new CLI cases in `tests/unit/test_cli_hash.py` (stable
+across runs, differs on payload change, missing file → non-zero
+exit, invalid JSON → non-zero exit, stdin via `-`, subcommand
+listed in top-level help).
+
+**End-to-end smoke finding**: two back-to-back `scan iac` runs on
+the same Terraform fixture produced *different* digests, because
+`AuditReport.generated_at` and `CryptoAsset.discovered_at` are
+populated with `datetime.now(UTC)` at scan time. For deterministic
+legal audits the timestamps must be either frozen by an explicit
+flag or excluded from the canonical form. Tracked as Sprint 8 step
+C2 — does NOT block the signing chain (a TSA-stamped + sigstore-
+signed report is still authoritative, even if two re-runs differ).
+
 ### Added — canonical JSON + report SHA-256 (Sprint 8 step A)
 
 Foundation for the report-signing chain prescribed by the
