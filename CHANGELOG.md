@@ -110,6 +110,38 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   guard, the malformed JSON path, and the live fetch via
   monkeypatch. 2 CLI tests for the subcommand wiring.
 
+### Added — canonical JSON + report SHA-256 (Sprint 8 step A)
+
+Foundation for the report-signing chain prescribed by the
+`audit-evidence-emit-2026` rule pack. Without a byte-stable
+serialization the downstream signers (RFC 3161 TSA, sigstore
+keyless) cannot produce a hash a regulator can independently
+recompute. This step builds *only* that foundation — signing
+itself lands in step B (TSA) and step C (sigstore).
+
+New module `pqc_audit.reporters.canonical`:
+  * `canonical_json(payload) -> str` — JSON serialization with
+    `sort_keys=True`, compact separators, `ensure_ascii=False`,
+    `allow_nan=False`. Approximate JCS-style canonical form — NOT
+    full RFC 8785 (the report does not use IEEE-754 floats in any
+    normative field). Italian / French / German accented characters
+    are emitted verbatim, not `\uXXXX`-escaped, so the canonical
+    bytes match what a regulator visually reads.
+  * `report_sha256(payload) -> str` — lowercase 64-hex SHA-256 of
+    the canonical bytes. The published digest is the legal
+    fingerprint of the report; a regulator parses the JSON, runs
+    `canonical_json` on the parsed object, and hash-compares.
+
+11 new tests pin the contract:
+  * key reordering invariance,
+  * byte stability across runs,
+  * NaN / Infinity rejection,
+  * non-ASCII preserved (no `\uXXXX` escapes),
+  * end-to-end smoke against a real `AuditReport` via
+    `json_reporter._to_jsonable`.
+
+Total test count: 430 pass / 3 skip (was 419 / 3).
+
 ### Added — rule pack provenance for legal-value audits (Sprint 7)
 
 The Sprint 6 integration made rule packs functionally enforceable.
