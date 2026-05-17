@@ -27,6 +27,14 @@ from pqc_audit.batch import (
     render_markdown as render_batch_markdown,
 )
 from pqc_audit.batch_diff import compare_batches, render_diff_markdown
+from pqc_audit.compliance.nis2 import (
+    SANCTION_ESSENTIAL_FINE_CAP_EUR,
+    SANCTION_ESSENTIAL_TURNOVER_PCT,
+    SANCTION_IMPORTANT_FINE_CAP_EUR,
+    SANCTION_IMPORTANT_TURNOVER_PCT,
+    apply_nis2_mapping,
+    summarize_articles,
+)
 from pqc_audit.core.models import AuditReport, RiskLevel
 from pqc_audit.reporters.cbom_reporter import render as render_cbom
 from pqc_audit.reporters.html_batch_reporter import render as render_html_batch
@@ -517,6 +525,101 @@ def report_cmd(
         return
 
     text = _render_text_format(fmt, report)
+    if output:
+        Path(output).write_text(text, encoding="utf-8")
+    else:
+        typer.echo(text)
+
+
+compliance_app = typer.Typer(
+    name="compliance",
+    help="Map audit findings to specific regulatory articles.",
+)
+app.add_typer(compliance_app, name="compliance")
+
+
+@compliance_app.command("nis2")
+def compliance_nis2_cmd(
+    input_path: str = typer.Option(
+        ...,
+        "--input",
+        "-i",
+        help="Path to a JSON scan report (output of `scan tls/certs/ssh`). Use '-' for stdin.",
+    ),
+    output: str | None = typer.Option(
+        None, "--output", "-o", help="Output Markdown file. Defaults to stdout."
+    ),
+) -> None:
+    """Map every vulnerability in a scan report to NIS2 / D.Lgs. 138/2024
+    art. 24(2) articles. Output is a Markdown table citing the Italian
+    legal reference + the EU directive mirror.
+
+    Unmapped findings are surfaced explicitly (no fabricated citation).
+    """
+    try:
+        report = _load_audit_report(input_path)
+    except FileNotFoundError as e:
+        typer.echo(f"error: cannot read --input: {e}", err=True)
+        raise typer.Exit(code=1) from e
+    except (ValueError, json.JSONDecodeError) as e:
+        typer.echo(f"error: invalid scan report payload: {e}", err=True)
+        raise typer.Exit(code=2) from e
+
+    mapping = apply_nis2_mapping(report)
+    all_articles = [art for arts in mapping.values() for art in arts]
+    summary = summarize_articles(all_articles)
+
+    lines: list[str] = []
+    lines.append(f"# NIS2 compliance mapping — report `{report.report_id}`")
+    lines.append("")
+    lines.append(
+        "Mapping di ogni finding al **D.Lgs. 4 settembre 2024, n. 138** "
+        "(recepimento NIS 2), articolo 24, comma 2, lettere (a)-(j). "
+        "Le citazioni accanto rinviano alla Direttiva (UE) 2022/2555."
+    )
+    lines.append("")
+    lines.append("## Articoli toccati dal report")
+    lines.append("")
+    if not summary:
+        lines.append(
+            "_Nessun finding mappato a un articolo NIS2 (controllare titoli "
+            "delle vulnerability vs. le pattern in `pqc_audit.compliance.nis2`)._"
+        )
+    else:
+        lines.append("| Articolo (Italia) | Tema | EU directive |")
+        lines.append("|---|---|---|")
+        for art in summary:
+            lines.append(
+                f"| **{art.legal_reference}** | {art.topic} "
+                f"| {art.eu_directive_reference} |"
+            )
+    lines.append("")
+    lines.append("## Mappatura per finding")
+    lines.append("")
+    lines.append("| Finding (titolo) | Articoli NIS2 |")
+    lines.append("|---|---|")
+    for title, arts in mapping.items():
+        if not arts:
+            cell = "_(unmapped — rivedere il titolo o aggiornare la mappatura)_"
+        else:
+            cell = "<br>".join(a.legal_reference for a in arts)
+        lines.append(f"| {title} | {cell} |")
+    lines.append("")
+    lines.append("## Sanzioni")
+    lines.append("")
+    lines.append(
+        f"- **Soggetti essenziali**: art. 38 D.Lgs. 138/2024 — fino a "
+        f"**{SANCTION_ESSENTIAL_FINE_CAP_EUR:,} EUR** o "
+        f"**{SANCTION_ESSENTIAL_TURNOVER_PCT}%** del fatturato mondiale annuo "
+        "(si applica il valore più alto)."
+    )
+    lines.append(
+        f"- **Soggetti importanti**: fino a "
+        f"**{SANCTION_IMPORTANT_FINE_CAP_EUR:,} EUR** o "
+        f"**{SANCTION_IMPORTANT_TURNOVER_PCT}%** del fatturato."
+    )
+    lines.append("")
+    text = "\n".join(lines)
     if output:
         Path(output).write_text(text, encoding="utf-8")
     else:

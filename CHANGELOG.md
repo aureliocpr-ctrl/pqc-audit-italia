@@ -28,6 +28,103 @@ before being sent to a qualified service. Anything beyond that
 (qualified accreditation paperwork, eIDAS conformance assessment)
 sits outside this repository.
 
+## [Unreleased] — Sprint 9h (NIS2 / D.Lgs. 138/2024 article mapping)
+
+Sprint 9h (2026-05-17) closes the gap between **technical** findings
+and **legal** citations: every `Vulnerability` produced by the
+scanners can be mapped to specific lettered measures of NIS2 art.
+21(2) / D.Lgs. 138/2024 art. 24(2). A PwC-grade audit report can
+now point at chapter-and-verse:
+
+> *"This finding implicates art. 24, comma 2, lett. (h) del D.Lgs.
+> 4 settembre 2024 n. 138 — politiche e procedure relative all'uso
+> della crittografia e cifratura."*
+
+### Why this matters
+
+- The Italian transposition decree took effect 2024-10-16 with a
+  three-tier sanction frame (`art. 38`):
+  - **Soggetti essenziali**: fino a 10 000 000 EUR o 2 % del
+    fatturato mondiale annuo (la maggiore delle due);
+  - **Soggetti importanti**: fino a 7 000 000 EUR o 1.4 % del
+    fatturato.
+- A technical-only audit cannot quantify the regulatory exposure;
+  citing the lettered measure makes it auditable.
+- ACN is the competent authority (art. 4 D.Lgs. 138/2024) and
+  expects audit deliverables to reference the decree text.
+
+### Added
+
+- `pqc_audit/compliance/__init__.py` — new compliance package.
+- `pqc_audit/compliance/nis2.py`:
+  - `NIS2Article` enum (10 lettered measures: `ART_24_2_A` ..
+    `ART_24_2_J`), each carrying Italian `legal_reference`,
+    `eu_directive_reference`, and `topic` strings.
+  - `map_finding_to_nis2(vulnerability)` — substring-regex
+    matching against the canonical scanner titles. Returns
+    `list[NIS2Article]`, possibly empty for unmapped titles
+    (we surface `[]` rather than inventing a citation — no fuffa).
+  - `apply_nis2_mapping(report)` — produces a `title → [Article]`
+    dict for an entire `AuditReport`.
+  - `summarize_articles(articles)` — distinct, order-preserving
+    article list for executive summary tables.
+  - Sanction constants: `SANCTION_ESSENTIAL_FINE_CAP_EUR=10_000_000`,
+    `SANCTION_ESSENTIAL_TURNOVER_PCT=2.0`,
+    `SANCTION_IMPORTANT_FINE_CAP_EUR=7_000_000`,
+    `SANCTION_IMPORTANT_TURNOVER_PCT=1.4` (art. 38 D.Lgs.
+    138/2024).
+- `pqc-audit compliance nis2 --input report.json --output mapping.md`
+  CLI subcommand — emits a Markdown table with article citations
+  + sanction frame.
+- 13 new pytest cases in `tests/unit/test_compliance_nis2.py`
+  covering all 10 enum letters, legal-reference exposure, eight
+  finding-mapping patterns (quantum-vulnerable, deprecated hash,
+  expired cert, undersized key, no-revocation, Must-Staple, PQC
+  hybrid, unknown title returns `[]`), `apply_nis2_mapping`
+  enrichment, `summarize_articles` distinctness, and the four
+  sanction constants.
+
+### Empirically verified end-to-end (REAL endpoint)
+
+CLI invocation against the existing `www.agid.gov.it:443` scan
+output:
+
+```
+$ pqc-audit compliance nis2 -i agid_rev.json -o agid_nis2.md
+```
+
+Generated Markdown contains:
+
+- **Article summary table** — only `art. 24, comma 2, lett. (h)`
+  hit (both quantum-vulnerable ECDSA findings map there).
+- **Per-finding mapping table** — leaf ECDSA-256 finding +
+  intermediate ECDSA-384 finding both cite the crypto article.
+- **Sanction section** — €10M / 2% (essentiali) and €7M / 1.4%
+  (importanti), with `art. 38 D.Lgs. 138/2024` citation.
+
+The unmapped path is also tested empirically: a hand-crafted
+finding with a wifi-related title (no scanner produces this today)
+yields an empty list — the table cell shows "_(unmapped — rivedere
+il titolo o aggiornare la mappatura)_" instead of fabricating an
+article. Anti-fuffa contract enforced.
+
+### Honest gap list (NOT done in 9h — explicit roadmap)
+
+- **No automatic policy → article mapping.** The compliance layer
+  reads `Vulnerability` titles only. Policy verdicts (Sprint 5/7
+  policy_engine output) are not yet routed through NIS2 mapping.
+- **No DORA / CRA / eIDAS mapping.** Single regulation supported
+  (Italian NIS2 transposition). DORA (Reg 2022/2554), CRA (Reg
+  2024/2847) and eIDAS2 (Reg 2024/1183) are separate sprints —
+  each has its own article structure.
+- **Pattern-based, not LLM-based.** Mapping changes require a
+  code update. Pro: deterministic, reviewable, falsifiable.
+  Con: new finding titles silently get `[]` until we add a
+  pattern.
+- **No incident notification mapping (art. 25).** We surface
+  vulnerabilities, not incidents. CSIRT Italia notification
+  workflows are outside this codebase's scope by design.
+
 ## [Unreleased] — Sprint 9g.1 (TLS revocation introspection, passive)
 
 Sprint 9g.1 (2026-05-17) extends the TLS scanner from "what crypto"
