@@ -43,6 +43,7 @@ from pqc_audit.core.risk import (
 from pqc_audit.policies import load_policy
 from pqc_audit.policy_engine import PolicyEvaluation, evaluate_report
 from pqc_audit.scanners.base import BaseScanner, ScanTarget
+from pqc_audit.scanners.pqc_hybrid_scanner import PQCHybridScanner
 from pqc_audit.scanners.tls_scanner import TLSScanner
 
 # Default assumed lifetime of confidential data, in years. Conservative
@@ -211,7 +212,7 @@ class Auditor:
         self.policy = policy
         self.data_sensitivity_years = data_sensitivity_years
         self.scanners: list[BaseScanner] = (
-            list(scanners) if scanners is not None else [TLSScanner()]
+            list(scanners) if scanners is not None else [TLSScanner(), PQCHybridScanner()]
         )
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be >= 1")

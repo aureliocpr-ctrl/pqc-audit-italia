@@ -28,6 +28,137 @@ before being sent to a qualified service. Anything beyond that
 (qualified accreditation paperwork, eIDAS conformance assessment)
 sits outside this repository.
 
+## [Unreleased] — Sprint 9f (PQC hybrid handshake detection)
+
+Sprint 9f (2026-05-17) adds an **active** TLS 1.3 probe scanner that
+tells the auditor whether a service has begun its post-quantum
+migration at the key-exchange layer. This is the single most-asked
+question in a 2026 PQC readiness audit (PwC, ENISA, ACN) and a
+leaf-cert auditor cannot answer it from a passive handshake.
+
+### How it works (no marketing)
+
+For each target, **three** `openssl s_client` handshakes are driven,
+one per codepoint in `draft-ietf-tls-ecdhe-mlkem-04` (Feb 2026, in
+RFC Ed Queue, awaiting IESG publication):
+
+- `SecP256r1MLKEM768` (IANA `0x11EB` = 4587)
+- `X25519MLKEM768` (IANA `0x11EC` = 4588)
+- `SecP384r1MLKEM1024` (IANA `0x11ED` = 4589)
+
+Note on **`X448MLKEM1024`**: the original Sprint 9f draft also probed
+this group because `openssl list -kem-algorithms` shows it locally on
+OpenSSL 3.5.x. Cross-checking the IETF working draft revealed that
+`X448MLKEM1024` is **not** in the IANA TLS Supported Groups registry
+and has **no codepoint** — no real server can negotiate it over the
+wire. The probe matrix was reduced from 4 to 3 groups before commit.
+This is the "no fuffa" cycle in action: web research → caught the
+gap → fixed pre-commit. The empirical AGID + Cloudflare results
+below are post-fix, on the corrected 3-group probe.
+
+The scanner parses the OpenSSL `Negotiated TLS1.3 group:` line:
+
+- Group name returned ⇒ the server accepted the offer ⇒ hybrid
+  capability **confirmed**.
+- `<NULL>` or absent + alert 40 (`handshake_failure`) ⇒ rejected.
+
+Outputs:
+
+- One `CryptoAsset` per endpoint (`pqc-hybrid://host:port`) with
+  metadata: `probes: dict[group, negotiated_or_None]`,
+  `hybrid_supported: list[str]`, `hybrid_supported_count: int`,
+  `probe_tool: "openssl s_client"`, `probed_groups: list[str]`.
+- A positive **INFO** finding (`PQC hybrid migration active (<groups>)`)
+  when at least one group is accepted — useful for executive reports
+  that want to flag *progress*, not just gaps.
+- A **MEDIUM** finding (`No PQC hybrid key-exchange supported`,
+  CWE-327) when zero groups are accepted, with explicit NIST IR 8547
+  + tls-hybrid-design references.
+
+### Why `openssl s_client` (and not stdlib `ssl`)
+
+Empirically verified on Python 3.13.12 + OpenSSL 3.5.5
+(`ssl.OPENSSL_VERSION`):
+
+- `ssl.SSLContext.set_groups()` — does not exist.
+- `ctx.set_ecdh_curve("X25519MLKEM768")` — `ValueError: unknown
+  elliptic curve name` (OpenSSL classifies hybrids as KEMs, not
+  curves; the stdlib API only ever accepted classical curves).
+- `ssl.SSLSocket.group()` — does not exist; only `cipher()` and
+  `shared_ciphers()` are exposed.
+
+OpenSSL 3.5+ itself knows hybrid groups (visible in
+`openssl list -kem-algorithms` → all four including `X448MLKEM1024`).
+Driving it via `s_client` subprocess is therefore the only stdlib-
+only path. We restrict the probe matrix to the THREE IETF-registered
+groups (see above) — OpenSSL's local-only X448MLKEM1024 would never
+fly over the wire. The scanner gracefully degrades with a soft error
+if `openssl` is absent.
+
+### Added
+
+- `pqc_audit/scanners/pqc_hybrid_scanner.py` — new module with
+  `parse_negotiated_group`, `probe_group`, `probe_all_hybrid_groups`
+  pure helpers + the `PQCHybridScanner` class.
+- `"pqc-hybrid"` added to `TargetType` literal and
+  `_TYPE_TO_CATEGORY` (NETWORK).
+- `PQCHybridScanner` registered as a default scanner in
+  `Auditor.__init__` alongside `TLSScanner`, so any user-facing CLI
+  Auditor invocation can scan a `pqc-hybrid` target without extra
+  wiring.
+- `pqc-audit scan pqc-hybrid --host H --port P` CLI subcommand.
+- 12 new pytest cases in `tests/unit/test_scanners_pqc_hybrid.py`
+  covering parse edge cases (`<NULL>`, absent line, whitespace),
+  probe (mocked subprocess for argv assertion, timeout, handshake
+  failure), the full-4-group probe matrix, scanner integration for
+  both positive (1/3 succeed) and negative (0/3 succeed) cases, and
+  the openssl-unavailable soft-error path.
+
+### Empirically verified end-to-end (TWO REAL endpoints)
+
+`PQC_AUDIT_FROZEN_AT=2026-05-17T00:00:00Z`:
+
+| Endpoint | hybrid_supported | Negotiated example | Finding |
+|---|---|---|---|
+| `www.agid.gov.it:443` | `[]` (0/3) | none (alert 40 on all) | **MEDIUM** `No PQC hybrid key-exchange supported` (CWE-327) |
+| `www.cloudflare.com:443` | `["X25519MLKEM768"]` (1/3) | `X25519MLKEM768` | **INFO** `PQC hybrid migration active (X25519MLKEM768)` |
+
+CBOM + SARIF emitted for both:
+
+| Output | AGID | Cloudflare |
+|---|---|---|
+| CycloneDX 1.6 schema | **PASS** (0 errors) | **PASS** (0 errors) |
+| OASIS SARIF 2.1.0 schema | **PASS** (0 errors) | **PASS** (0 errors) |
+| SARIF ruleId | `PQC.NO_PQC.TLS-HYBRID-PROBE` (warning) | `PQC.PQC_HYBRID.TLS-HYBRID-PROBE` (note) |
+
+This is the first sprint that produces a **comparative** dataset:
+two real endpoints, one PQC-ready, one not. The auditor's verdict on
+each is empirically falsifiable (re-run with openssl and observe).
+
+### Honest gap list (NOT done in 9f — explicit roadmap)
+
+- **No KEM-extra group probe** beyond the IANA-registered four. Not
+  all hybrid drafts have been retired in favor of `MLKEM*` IDs —
+  some servers may still advertise `X25519Kyber768Draft00` (0x6399)
+  which we do NOT probe. This is intentional: the draft codepoints
+  are deprecated and should not earn a "PQC migration active" award.
+- **No client-cert / authentication PQC.** The four hybrid groups
+  cover KEY EXCHANGE (KEM). The signature-algorithm side
+  (`ML-DSA-65` / `SLH-DSA-128s` in certificate chains, `ML-DSA-65`
+  in CertificateVerify) is a separate question, currently invisible
+  in the scanner. Sprint 9f.2 candidate.
+- **No fingerprinting of WHICH hybrid the server prefers when
+  multiple are offered**. We test one group at a time. A real
+  client offers a list and lets the server pick. Trivial extension
+  for 9f.3.
+- **`openssl` 3.5+ required in PATH.** Older OpenSSL builds (3.4
+  and below) don't know hybrid group names and will negotiate the
+  classical fallback or fail. CI matrix should pin a known build.
+- **Active probing — NOT passive.** Four extra handshakes per target.
+  At default 8s timeout that's up to 32s per host; the Auditor's
+  `max_concurrency=16` bounds the blast radius. Operators wishing
+  to keep audits passive should skip the `pqc-hybrid` target type.
+
 ## [Unreleased] — Sprint 9d (TLS chain validation)
 
 Sprint 9d (2026-05-17) extends the TLS scanner from leaf-only to

@@ -28,6 +28,7 @@ TargetType = Literal[
     "token",
     "iac",
     "jwks",
+    "pqc-hybrid",
 ]
 
 
@@ -43,6 +44,7 @@ _TYPE_TO_CATEGORY: dict[str, ScanCategory] = {
     "token": ScanCategory.CONFIG,
     "iac": ScanCategory.CODE,
     "jwks": ScanCategory.NETWORK,
+    "pqc-hybrid": ScanCategory.NETWORK,
 }
 
 

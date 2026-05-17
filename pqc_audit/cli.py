@@ -118,6 +118,32 @@ def scan_tls_cmd(
     typer.echo(rendered)
 
 
+@scan_app.command("pqc-hybrid")
+def scan_pqc_hybrid_cmd(
+    host: str = typer.Option(..., "--host", help="Hostname or IP to connect to."),
+    port: int = typer.Option(443, "--port", help="TCP port (default: 443)."),
+    policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    data_sensitivity_years: int = typer.Option(
+        10,
+        "--data-sensitivity-years",
+        help="Assumed lifetime of confidential data, drives HNDL scoring (default: 10).",
+    ),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Probe a TLS endpoint for PQC hybrid key-exchange support.
+
+    Runs three ``openssl s_client`` handshakes — one per IETF
+    draft-ietf-tls-ecdhe-mlkem-04 hybrid named group
+    (SecP256r1MLKEM768 0x11EB, X25519MLKEM768 0x11EC,
+    SecP384r1MLKEM1024 0x11ED) — and reports which (if any) the
+    server accepts. Requires ``openssl`` 3.5+ in PATH.
+    """
+    auditor = Auditor(policy=policy, data_sensitivity_years=data_sensitivity_years)
+    target = ScanTarget(type="pqc-hybrid", host=host, port=port)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
+
+
 @scan_app.command("certs")
 def scan_certs_cmd(
     path: str = typer.Option(
