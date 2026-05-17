@@ -1,0 +1,137 @@
+# Italian recepimento rule pack — 2026 edition
+#
+# National implementation layer that anchors the EU baseline to Italian
+# law and Italian supervisory authorities:
+#   * D.Lgs. 4 settembre 2024, n. 138 — NIS2 recepimento (in GU 1 Oct 2024)
+#   * ACN — Agenzia per la Cybersicurezza Nazionale (NIS2 competent authority)
+#   * Banca d'Italia Circolare 285/2013 — Disposizioni di vigilanza per le
+#     banche (Parte Prima Titolo IV Cap. 4 on ICT and security risk)
+#   * AGID Linee Guida sulla sicurezza nel procurement ICT
+#
+# This pack does NOT duplicate the EU rules: it adds the Italian
+# supervisory anchors and the sector-specific cryptographic discipline
+# expected by Banca d'Italia for banks and AgID for PA.
+#
+# Schema: pqc_audit.rule_packs.schema.RulePack
+
+name: it-recepimento-nis2-2026
+version: "2026.05.17"
+title: Italia — Recepimento NIS2 + Vigilanza ICT (D.Lgs. 138/2024 + ACN + BdI)
+description: >
+  Cryptographic discipline anchored to the Italian national authorities
+  that supervise NIS2 essential/important entities (ACN), banking ICT
+  risk (Banca d'Italia Circolare 285), and the PA procurement chain
+  (AGID). Pairs with eu-crypto-regulatory-2026 to give an Italian-PA
+  ready compliance posture.
+
+effective_dates:
+  dlgs_138_2024_gu: 2024-10-01            # GU pubblicazione D.Lgs. 138/2024
+  dlgs_138_2024_in_force: 2024-10-16      # 15 gg dopo pubblicazione GU
+  acn_competent_authority: 2021-08-04     # Istituzione ACN (DL 82/2021)
+  bdi_circ_285_first: 2013-12-17          # Circolare 285 BdI prima emissione
+  agid_misure_minime_ict: 2017-04-18      # AGID Circ. 2/2017 ABSC
+
+provenance:
+  source: Repubblica Italiana / ACN / Banca d'Italia / AGID
+  url: https://www.normattiva.it/eli/id/2024/10/01/24G00155/sg
+  retrieved: 2026-05-17
+
+applies_to:
+  asset_categories:
+    - tls
+    - ssh
+    - cert
+    - jwt
+    - saml
+    - mtls
+    - dnssec
+
+controls:
+  # --- ACN — soggetti essenziali NIS2 (CRITICAL severity) -------------
+  - id: IT-ACN-NIS2-001
+    description: >
+      Per soggetti essenziali NIS2 (D.Lgs. 138/2024 art. 24), gli
+      algoritmi crittografici devono essere allineati alle migliori
+      pratiche internazionali. MD5 non è ammesso in alcun contesto.
+    rule_type: forbid
+    algorithm: MD5
+    severity: CRITICAL
+    references:
+      - https://www.normattiva.it/eli/id/2024/10/01/24G00155/sg
+      - https://www.acn.gov.it/
+
+  - id: IT-ACN-NIS2-002
+    description: >
+      SHA-1 non è ammesso in scope NIS2 per nuove implementazioni;
+      legacy con piano di rientro documentato.
+    rule_type: forbid
+    algorithm: SHA-1
+    severity: CRITICAL
+    references:
+      - https://www.normattiva.it/eli/id/2024/10/01/24G00155/sg
+      - https://www.acn.gov.it/
+
+  - id: IT-ACN-NIS2-003
+    description: >
+      RSA-1024 sotto il minimo accettabile per soggetti essenziali e
+      importanti NIS2.
+    rule_type: forbid
+    algorithm: RSA-1024
+    severity: CRITICAL
+    references:
+      - https://www.normattiva.it/eli/id/2024/10/01/24G00155/sg
+
+  - id: IT-ACN-NIS2-004
+    description: >
+      3DES (TDES) escluso per soggetti NIS2; allineamento a NIST SP
+      800-131A Rev. 2 e DORA Art. 9.
+    rule_type: forbid
+    algorithm: 3DES
+    severity: CRITICAL
+    references:
+      - https://www.normattiva.it/eli/id/2024/10/01/24G00155/sg
+
+  # --- Banca d'Italia Circolare 285 — ICT risk ------------------------
+  - id: IT-BDI-285-001
+    description: >
+      RC4 non ammesso nei sistemi ICT bancari sotto vigilanza Banca
+      d'Italia (Circolare 285, Parte Prima, Titolo IV, Cap. 4).
+    rule_type: forbid
+    algorithm: RC4
+    severity: CRITICAL
+    references:
+      - https://www.bancaditalia.it/compiti/vigilanza/normativa/archivio-norme/circolari/c285/
+
+  - id: IT-BDI-285-002
+    description: >
+      RSA-2048 da migrare entro la scadenza ENISA hybrid (2030); per
+      asset bancari critici BdI si raccomanda l'avvio del piano di
+      transizione PQC entro il 2027.
+    rule_type: deprecate_after
+    algorithm: RSA-2048
+    severity: HIGH
+    effective: 2030-01-01
+    references:
+      - https://www.bancaditalia.it/compiti/vigilanza/normativa/archivio-norme/circolari/c285/
+
+  # --- AGID — PA italiana --------------------------------------------
+  - id: IT-AGID-PA-001
+    description: >
+      ML-KEM-768 raccomandato come primitiva KEM di riferimento per
+      sistemi PA italiani che recepiscono le indicazioni AGID/ACN per
+      la transizione post-quantum.
+    rule_type: allow
+    algorithm: ML-KEM-768
+    severity: INFO
+    references:
+      - https://www.agid.gov.it/
+
+  - id: IT-AGID-PA-002
+    description: >
+      ML-DSA-65 raccomandato come firma di riferimento per documenti
+      PA che richiedono integrità e non ripudio a lungo termine.
+    rule_type: allow
+    algorithm: ML-DSA-65
+    severity: INFO
+    references:
+      - https://www.agid.gov.it/

@@ -202,3 +202,165 @@ def test_evidence_requirement_rejects_unknown_artifact_type() -> None:
                 "severity": "HIGH",
             }
         )
+
+
+# --- Sprint 4 #2 — four additional regulation-anchored packs ----------
+
+
+def test_load_rule_pack_eu_crypto_regulatory_2026_anchors_cra_dora_eidas2() -> None:
+    from pqc_audit.rule_packs import load_rule_pack
+
+    pack = load_rule_pack("eu-crypto-regulatory-2026")
+    assert pack.name == "eu-crypto-regulatory-2026"
+    # CRA Regulation (EU) 2024/2847 entered into force 2024-12-10 and
+    # becomes fully applicable to products 2027-12-11 — both anchored.
+    assert pack.effective_dates["cra_in_force"] == date(2024, 12, 10)
+    assert pack.effective_dates["cra_full_application"] == date(2027, 12, 11)
+    # DORA Regulation (EU) 2022/2554 applied 2025-01-17.
+    assert pack.effective_dates["dora_applied"] == date(2025, 1, 17)
+    # eIDAS2 Regulation (EU) 2024/1183 entered into force 2024-05-20.
+    assert pack.effective_dates["eidas2_in_force"] == date(2024, 5, 20)
+    # Provenance must reference an EUR-Lex URL so the regulatory
+    # anchor is non-repudiable.
+    assert "eur-lex.europa.eu" in pack.provenance.url
+
+
+def test_eu_crypto_regulatory_2026_discourages_classical_before_2030() -> None:
+    """ENISA hybrid-first path discourages RSA/ECDSA earlier than NIST IR 8547."""
+    from pqc_audit.rule_packs import load_rule_pack
+
+    pack = load_rule_pack("eu-crypto-regulatory-2026")
+    discouraged = {c.algorithm for c in pack.controls if c.rule_type == "discourage"}
+    assert "RSA-2048" in discouraged
+    assert "ECDSA-P-256" in discouraged
+
+
+def test_load_rule_pack_it_recepimento_nis2_2026_anchors_dlgs_138() -> None:
+    from pqc_audit.rule_packs import load_rule_pack
+
+    pack = load_rule_pack("it-recepimento-nis2-2026")
+    assert pack.name == "it-recepimento-nis2-2026"
+    # D.Lgs. 138/2024 published in GU on 2024-10-01.
+    assert pack.effective_dates["dlgs_138_2024_gu"] == date(2024, 10, 1)
+    # ACN established by DL 82/2021 — 2021-08-04.
+    assert pack.effective_dates["acn_competent_authority"] == date(2021, 8, 4)
+    # Banca d'Italia Circolare 285 first edition.
+    assert pack.effective_dates["bdi_circ_285_first"] == date(2013, 12, 17)
+    # Provenance includes normattiva.it canonical link.
+    assert "normattiva.it" in pack.provenance.url
+
+
+def test_it_recepimento_nis2_forbids_md5_sha1_rsa1024_3des_rc4() -> None:
+    """NIS2 essential entities cannot keep legacy primitives in scope."""
+    from pqc_audit.rule_packs import load_rule_pack
+
+    pack = load_rule_pack("it-recepimento-nis2-2026")
+    forbidden = {c.algorithm for c in pack.controls if c.rule_type == "forbid"}
+    assert {"MD5", "SHA-1", "RSA-1024", "3DES", "RC4"}.issubset(forbidden)
+
+
+def test_load_rule_pack_agid_absc_2026_anchors_ict_baseline() -> None:
+    from pqc_audit.rule_packs import load_rule_pack
+
+    pack = load_rule_pack("agid-absc-2026")
+    assert pack.name == "agid-absc-2026"
+    # AGID Circolare 2/2017 (Misure minime ICT) — 2017-04-18.
+    assert pack.effective_dates["agid_circ_2_2017"] == date(2017, 4, 18)
+    assert pack.provenance.source.startswith("AGID")
+
+
+def test_agid_absc_2026_allows_pqc_baseline_for_pa_procurement() -> None:
+    """PA capitolato 2026+ defaults to ML-KEM-768 + ML-DSA-65."""
+    from pqc_audit.rule_packs import load_rule_pack
+
+    pack = load_rule_pack("agid-absc-2026")
+    allowed = {c.algorithm for c in pack.controls if c.rule_type == "allow"}
+    assert "ML-KEM-768" in allowed
+    assert "ML-DSA-65" in allowed
+
+
+def test_load_rule_pack_fips_strict_2026_forbids_classical_no_transition() -> None:
+    """STRICT variant forbids RSA/ECC outright (no 2030 transition window)."""
+    from pqc_audit.rule_packs import load_rule_pack
+
+    pack = load_rule_pack("fips-203-204-205-strict-2026")
+    assert pack.name == "fips-203-204-205-strict-2026"
+    forbidden = {c.algorithm for c in pack.controls if c.rule_type == "forbid"}
+    # Classical RSA / ECC must be in FORBID (not in deprecate_after) —
+    # the whole point of STRICT mode.
+    assert "RSA-2048" in forbidden
+    assert "RSA-3072" in forbidden
+    assert "ECDSA-P-256" in forbidden
+    assert "ECDSA-P-384" in forbidden
+    assert "ECDH-P-256" in forbidden
+    # And RSA-2048 must NOT be in deprecate_after under STRICT mode.
+    deprecate = {c.algorithm for c in pack.controls if c.rule_type == "deprecate_after"}
+    assert "RSA-2048" not in deprecate
+
+
+def test_fips_strict_2026_references_cnsa_2_0() -> None:
+    """STRICT pack is rationalised by the NSA CNSA 2.0 timeline."""
+    from pqc_audit.rule_packs import load_rule_pack
+
+    pack = load_rule_pack("fips-203-204-205-strict-2026")
+    assert "CNSA 2.0" in pack.provenance.source or "media.defense.gov" in pack.provenance.url
+    assert pack.effective_dates["cnsa_2_0_published"] == date(2022, 9, 7)
+
+
+def test_list_bundled_rule_packs_includes_all_six() -> None:
+    """After Sprint 4 #2 the bundled set is exactly six packs."""
+    from pqc_audit.rule_packs import list_bundled_rule_packs
+
+    names = set(list_bundled_rule_packs())
+    expected = {
+        "nist-core-2026",
+        "audit-evidence-emit-2026",
+        "eu-crypto-regulatory-2026",
+        "it-recepimento-nis2-2026",
+        "agid-absc-2026",
+        "fips-203-204-205-strict-2026",
+    }
+    assert expected.issubset(names), f"missing packs: {expected - names}"
+
+
+def test_compile_rule_packs_strict_overlays_classical_forbid() -> None:
+    """STRICT + nist-core merged: RSA-2048 is added to the forbidden set.
+
+    Documented behaviour of CompiledRuleSet: ``forbid`` and
+    ``deprecate_after`` are independent buckets and the merge is
+    additive — STRICT does NOT erase the lenient deprecate_after entry,
+    it adds RSA-2048 to ``forbidden_algorithms`` as well. Callers
+    enforcing STRICT must read ``forbidden_algorithms`` first; the
+    presence of an algorithm there is a hard fail regardless of any
+    deprecate_after window.
+    """
+    from pqc_audit.rule_packs import compile_rule_packs
+
+    compiled = compile_rule_packs(
+        ["nist-core-2026", "fips-203-204-205-strict-2026"]
+    )
+    assert "RSA-2048" in compiled.forbidden_algorithms
+    # The lenient-only compile keeps RSA-2048 out of forbidden.
+    lenient = compile_rule_packs(["nist-core-2026"])
+    assert "RSA-2048" not in lenient.forbidden_algorithms
+    assert "RSA-2048" in lenient.deprecate_after
+
+
+def test_compile_rule_packs_eu_plus_italian_layered_compliance() -> None:
+    """Italian PA tender: EU + IT + AGID layered into a single compiled set."""
+    from pqc_audit.rule_packs import compile_rule_packs
+
+    compiled = compile_rule_packs(
+        [
+            "eu-crypto-regulatory-2026",
+            "it-recepimento-nis2-2026",
+            "agid-absc-2026",
+        ]
+    )
+    # Italian PA NIS2 + EU CRA + AGID procurement = the three legacy
+    # primitives must all surface in the forbidden set.
+    assert {"MD5", "SHA-1", "RSA-1024", "3DES", "RC4"}.issubset(
+        compiled.forbidden_algorithms
+    )
+    # ML-KEM-768 must remain explicitly allowed.
+    assert "ML-KEM-768" in compiled.allowed_algorithms

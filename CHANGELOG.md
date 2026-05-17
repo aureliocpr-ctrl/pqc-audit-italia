@@ -5,7 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — Sprint 1 (global-grade transformation)
+## [Unreleased] — Sprint 4 (regulatory layer + security bump)
+
+Sprint 4 (2026-05-17, continued same day as Sprint 1-3) layers four
+additional regulation-anchored rule packs on top of the Sprint 1
+baseline, and bumps `cryptography` to the patched 46.0.x series.
+
+### Added — four regulation-anchored rule packs
+
+- `pqc_audit/rule_packs/eu-crypto-regulatory-2026.yaml` — combined EU
+  baseline anchored to CRA (Reg (EU) 2024/2847), DORA (Reg (EU)
+  2022/2554), eIDAS2 (Reg (EU) 2024/1183), the ENISA Post-Quantum
+  Cryptography recommendation (hybrid-first 2025-2030) and ETSI TS
+  119 312 cryptographic suites. Discourages RSA-2048 / ECDSA-P-256
+  ahead of the NIST 2030 deadline for new EU product placements.
+- `pqc_audit/rule_packs/it-recepimento-nis2-2026.yaml` — Italian
+  national layer anchored to D.Lgs. 4 settembre 2024 n. 138 (NIS2
+  recepimento, GU 2024-10-01), ACN as competent authority, Banca
+  d'Italia Circolare 285/2013 for bank ICT risk, and AGID for PA.
+- `pqc_audit/rule_packs/agid-absc-2026.yaml` — AGID Misure Minime di
+  Sicurezza ICT (ABSC) per the PA, plus a PQC-ready procurement
+  baseline for new capitolato d'oneri from 2026 onward.
+- `pqc_audit/rule_packs/fips-203-204-205-strict-2026.yaml` — STRICT
+  variant aligned to NSA CNSA 2.0 (2022-09-07) that forbids classical
+  RSA / ECDSA / ECDH outright instead of using the lenient NIST IR
+  8547 transition window. Documented compose semantics: STRICT
+  overlay adds RSA-2048 to `forbidden_algorithms` while leaving the
+  lenient `deprecate_after` entry intact (callers enforce STRICT by
+  reading `forbidden_algorithms` first).
+- 11 new pytest cases in `tests/unit/test_rule_packs.py` pin the
+  effective dates, regulatory anchors, and compose semantics. Total
+  rule-pack tests: 25 (all green local Windows + cryptography 46.0.7).
+
+### Security — cryptography 45.x → 46.0.7
+
+- `pyproject.toml`: bumped `cryptography>=46.0.7,<47.0` (was
+  `>=42.0,<46.0`) to address three pip-audit advisories in 45.0.x:
+  CVE-2026-26007 (fix 46.0.5), CVE-2026-34073 (fix 46.0.6),
+  CVE-2026-39892 (fix 46.0.7). The 45→46 line did not change the
+  public Python API used by pqc-audit (X509, EC, RSA, hazmat). Full
+  local unit suite re-ran green on 46.0.7.
+
+---
+
+## Sprint 1-3 (global-grade transformation, tag v0.3.0-alpha1)
 
 Sprint 1 of the global-grade transformation announced 2026-05-17.
 The package is still alpha — these changes are not part of a tagged

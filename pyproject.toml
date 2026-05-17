@@ -59,7 +59,12 @@ dependencies = [
     # bumps (pydantic, cryptography, pyyaml) so a transitive resolver
     # can never pull in an untested major.
     "pydantic>=2.5,<3.0",
-    "cryptography>=42.0,<46.0",
+    # cryptography 45.x has 3 advisories fixed in 46.0.5/.6/.7
+    # (CVE-2026-26007, CVE-2026-34073, CVE-2026-39892). Floor bumped
+    # to the patched release; upper bound widened to <47 since the
+    # 45→46 series only changed the OpenSSL bundling, not the public
+    # Python API we use (X509, EC, RSA, hazmat primitives).
+    "cryptography>=46.0.7,<47.0",
     "typer>=0.12,<1.0",
     "pyyaml>=6.0,<7.0",
     # defusedxml is required by the SAML scanner to block XXE / billion

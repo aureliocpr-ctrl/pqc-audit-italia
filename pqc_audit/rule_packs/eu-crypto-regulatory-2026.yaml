@@ -1,0 +1,163 @@
+# EU cryptographic regulatory rule pack — 2026 edition
+#
+# Cross-regulation pack for EU digital trust + cybersecurity rules that
+# touch cryptography:
+#   * EU CRA (Cyber Resilience Act, Regulation (EU) 2024/2847)
+#   * DORA (Digital Operational Resilience Act, Regulation (EU) 2022/2554)
+#   * eIDAS2 (Regulation (EU) 2024/1183 amending 910/2014)
+#   * ENISA Post-Quantum Cryptography recommendation (hybrid-first)
+#   * ETSI TS 119 312 cryptographic suites
+#
+# CRA + ENISA push toward quantum-resistant ahead of NIST 2030 deadline:
+# this pack therefore *discourages* (not just deprecates) classical
+# RSA/ECC for any product reaching the market after the CRA full
+# applicability date (2027-12-11). Hybrid KEM combinations are the
+# ENISA-recommended migration path during 2025-2030.
+#
+# Schema: pqc_audit.rule_packs.schema.RulePack
+
+name: eu-crypto-regulatory-2026
+version: "2026.05.17"
+title: EU Cryptographic Regulatory (CRA + DORA + eIDAS2 + ENISA)
+description: >
+  Combined EU regulatory baseline. Aligns FIPS-approved PQC primitives
+  with the EU-specific market-access constraints (CRA secure-by-design),
+  financial-sector ICT resilience (DORA), and the eIDAS2 European
+  Digital Identity Wallet cryptographic requirements. ENISA PQC
+  guidance is reflected by discouraging classical RSA/ECC earlier than
+  the NIST IR 8547 2030 milestone for new product placements.
+
+effective_dates:
+  cra_in_force: 2024-12-10               # Reg (EU) 2024/2847 entry into force
+  cra_reporting_apps: 2026-09-11         # CRA reporting obligations apply
+  cra_full_application: 2027-12-11       # CRA fully applicable to products
+  dora_applied: 2025-01-17                # DORA application date
+  eidas2_in_force: 2024-05-20             # Reg (EU) 2024/1183 entry into force
+  enisa_pqc_report: 2021-10-18            # ENISA Post-Quantum Cryptography
+  etsi_119_312_v1_5: 2024-02-29           # ETSI TS 119 312 v1.5.1
+
+provenance:
+  source: European Union / ENISA / ETSI
+  url: https://eur-lex.europa.eu/eli/reg/2024/2847/oj
+  retrieved: 2026-05-17
+
+applies_to:
+  asset_categories:
+    - tls
+    - ssh
+    - cert
+    - jwt
+    - saml
+    - mtls
+    - dnssec
+
+controls:
+  # --- EU CRA secure-by-design — PQC mandatory for new products --------
+  - id: EU-CRA-PQC-001
+    description: >
+      ML-KEM-768 is the recommended FIPS-203 KEM for products placed on
+      the EU market under the CRA secure-by-design obligation.
+    rule_type: allow
+    algorithm: ML-KEM-768
+    severity: INFO
+    references:
+      - https://eur-lex.europa.eu/eli/reg/2024/2847/oj
+
+  - id: EU-CRA-PQC-002
+    description: >
+      ML-DSA-65 is the recommended FIPS-204 signature scheme for CRA
+      product authenticity and integrity attestations.
+    rule_type: allow
+    algorithm: ML-DSA-65
+    severity: INFO
+    references:
+      - https://eur-lex.europa.eu/eli/reg/2024/2847/oj
+
+  # --- ENISA hybrid-first migration during 2025-2030 ------------------
+  - id: EU-ENISA-HYBRID-001
+    description: >
+      RSA-2048 discouraged for new EU product placements before the CRA
+      full applicability date (2027-12-11). ENISA recommends a hybrid
+      classical+PQC KEM during 2025-2030 rather than continuing pure
+      RSA in greenfield deployments.
+    rule_type: discourage
+    algorithm: RSA-2048
+    severity: HIGH
+    references:
+      - https://www.enisa.europa.eu/publications/post-quantum-cryptography-current-state-and-quantum-mitigation
+
+  - id: EU-ENISA-HYBRID-002
+    description: >
+      ECDSA-P-256 discouraged for new EU product placements; ENISA
+      hybrid migration path (ECDSA + ML-DSA-65) is the recommended
+      transitional posture.
+    rule_type: discourage
+    algorithm: ECDSA-P-256
+    severity: HIGH
+    references:
+      - https://www.enisa.europa.eu/publications/post-quantum-cryptography-current-state-and-quantum-mitigation
+
+  # --- DORA financial-sector ICT resilience ---------------------------
+  - id: EU-DORA-001
+    description: >
+      Under DORA Art. 9, financial entities must use state-of-the-art
+      ICT security controls. SHA-1 is not state-of-the-art and is
+      therefore disallowed in any DORA-scoped financial transaction.
+    rule_type: forbid
+    algorithm: SHA-1
+    severity: CRITICAL
+    references:
+      - https://eur-lex.europa.eu/eli/reg/2022/2554/oj
+
+  - id: EU-DORA-002
+    description: >
+      Under DORA Art. 9, 3DES is not state-of-the-art and disallowed
+      for financial-sector ICT systems in scope.
+    rule_type: forbid
+    algorithm: 3DES
+    severity: CRITICAL
+    references:
+      - https://eur-lex.europa.eu/eli/reg/2022/2554/oj
+
+  # --- eIDAS2 European Digital Identity Wallet ------------------------
+  - id: EU-EIDAS2-001
+    description: >
+      eIDAS2 EUDI Wallet relies on qualified electronic signatures;
+      ML-DSA-65 is the post-quantum candidate signature scheme aligned
+      with the EU Architecture and Reference Framework (ARF).
+    rule_type: allow
+    algorithm: ML-DSA-65
+    severity: INFO
+    references:
+      - https://eur-lex.europa.eu/eli/reg/2024/1183/oj
+
+  - id: EU-EIDAS2-002
+    description: >
+      MD5 has no remaining valid use case in any eIDAS2 qualified
+      service.
+    rule_type: forbid
+    algorithm: MD5
+    severity: CRITICAL
+    references:
+      - https://eur-lex.europa.eu/eli/reg/2024/1183/oj
+
+  # --- ETSI TS 119 312 — cryptographic suites for trust services -----
+  - id: EU-ETSI-119-312-001
+    description: >
+      RSA-1024 is below the ETSI TS 119 312 minimum key size for trust
+      services.
+    rule_type: forbid
+    algorithm: RSA-1024
+    severity: CRITICAL
+    references:
+      - https://www.etsi.org/deliver/etsi_ts/119300_119399/119312/
+
+  - id: EU-ETSI-119-312-002
+    description: >
+      RC4 stream cipher is explicitly excluded from ETSI TS 119 312
+      cryptographic suites.
+    rule_type: forbid
+    algorithm: RC4
+    severity: CRITICAL
+    references:
+      - https://www.etsi.org/deliver/etsi_ts/119300_119399/119312/
