@@ -74,3 +74,6 @@ batch_report.html
 # Docs build
 site/
 docs/_build/
+
+# Adversarial review (critic-orchestrator) scratch files
+.review_*.diff

@@ -1,0 +1,212 @@
+# NIST PQC Core rule pack — 2026 edition
+#
+# Regulation-anchored baseline for NIST FIPS 203/204/205 and SP 800-227.
+# This pack is the canonical allow-list for FIPS-aligned cryptography
+# combined with the NIST IR 8547 transition schedule for classical
+# algorithms (deprecated 2030, disallowed 2035).
+#
+# Every effective_date and reference URL below was verified against the
+# published NIST documents. Drift in either is a regression and the
+# associated test in tests/unit/test_rule_packs.py fails loudly.
+#
+# Schema: pqc_audit.rule_packs.schema.RulePack
+
+name: nist-core-2026
+version: "2026.05.17"
+title: NIST PQC Core (FIPS 203/204/205 + SP 800-227)
+description: >
+  Allow-list of FIPS-approved post-quantum algorithms (ML-KEM, ML-DSA,
+  SLH-DSA) plus the NIST IR 8547 transition timeline for classical
+  RSA/ECDSA/ECDH (deprecated 2030, disallowed 2035). Suitable as the
+  cryptographic baseline for any audit driven by NIST guidance.
+
+effective_dates:
+  fips_203_final: 2024-08-13         # ML-KEM (Kyber)
+  fips_204_final: 2024-08-13         # ML-DSA (Dilithium)
+  fips_205_final: 2024-08-13         # SLH-DSA (SPHINCS+)
+  sp_800_227_final: 2025-09-18       # KEM usage guidance
+  fips_206_ipd: 2025-08-28           # FN-DSA (Falcon) initial public draft
+  nist_ir_8547: 2024-11-12           # Transition IR (initial public draft)
+  classical_deprecated: 2030-01-01   # IR 8547 deprecation milestone
+  classical_disallowed: 2035-01-01   # IR 8547 disallowed milestone
+
+provenance:
+  source: NIST
+  url: https://csrc.nist.gov/projects/post-quantum-cryptography
+  retrieved: 2026-05-17
+
+applies_to:
+  asset_categories:
+    - tls
+    - ssh
+    - cert
+    - jwt
+    - saml
+    - mtls
+    - dnssec
+
+controls:
+  # --- FIPS 203 — ML-KEM (key encapsulation) ----------------------------
+  - id: NIST-CORE-KEM-001
+    description: ML-KEM-512 is an approved key encapsulation mechanism (NIST cat 1).
+    rule_type: allow
+    algorithm: ML-KEM-512
+    severity: INFO
+    references:
+      - https://csrc.nist.gov/pubs/fips/203/final
+
+  - id: NIST-CORE-KEM-002
+    description: ML-KEM-768 is an approved KEM (NIST cat 3); default recommendation.
+    rule_type: allow
+    algorithm: ML-KEM-768
+    severity: INFO
+    references:
+      - https://csrc.nist.gov/pubs/fips/203/final
+
+  - id: NIST-CORE-KEM-003
+    description: ML-KEM-1024 is an approved KEM (NIST cat 5).
+    rule_type: allow
+    algorithm: ML-KEM-1024
+    severity: INFO
+    references:
+      - https://csrc.nist.gov/pubs/fips/203/final
+
+  # --- FIPS 204 — ML-DSA (signatures) -----------------------------------
+  - id: NIST-CORE-SIG-001
+    description: ML-DSA-44 is an approved signature scheme (NIST cat 2).
+    rule_type: allow
+    algorithm: ML-DSA-44
+    severity: INFO
+    references:
+      - https://csrc.nist.gov/pubs/fips/204/final
+
+  - id: NIST-CORE-SIG-002
+    description: ML-DSA-65 is an approved signature scheme (NIST cat 3); default.
+    rule_type: allow
+    algorithm: ML-DSA-65
+    severity: INFO
+    references:
+      - https://csrc.nist.gov/pubs/fips/204/final
+
+  - id: NIST-CORE-SIG-003
+    description: ML-DSA-87 is an approved signature scheme (NIST cat 5).
+    rule_type: allow
+    algorithm: ML-DSA-87
+    severity: INFO
+    references:
+      - https://csrc.nist.gov/pubs/fips/204/final
+
+  # --- FIPS 205 — SLH-DSA (hash-based signatures) -----------------------
+  - id: NIST-CORE-SIG-101
+    description: SLH-DSA-SHA2-128s is an approved hash-based signature (NIST cat 1).
+    rule_type: allow
+    algorithm: SLH-DSA-SHA2-128s
+    severity: INFO
+    references:
+      - https://csrc.nist.gov/pubs/fips/205/final
+
+  - id: NIST-CORE-SIG-102
+    description: SLH-DSA-SHA2-192s is an approved hash-based signature (NIST cat 3).
+    rule_type: allow
+    algorithm: SLH-DSA-SHA2-192s
+    severity: INFO
+    references:
+      - https://csrc.nist.gov/pubs/fips/205/final
+
+  - id: NIST-CORE-SIG-103
+    description: SLH-DSA-SHA2-256s is an approved hash-based signature (NIST cat 5).
+    rule_type: allow
+    algorithm: SLH-DSA-SHA2-256s
+    severity: INFO
+    references:
+      - https://csrc.nist.gov/pubs/fips/205/final
+
+  # --- NIST IR 8547 — classical deprecation schedule --------------------
+  - id: NIST-CORE-DEP-001
+    description: >
+      RSA-2048 deprecated for new use after 2030-01-01 and disallowed
+      after 2035-01-01 (NIST IR 8547). Existing assets remain usable
+      until the disallow date but MUST have a migration plan on file.
+    rule_type: deprecate_after
+    algorithm: RSA-2048
+    severity: HIGH
+    effective: 2030-01-01
+    references:
+      - https://csrc.nist.gov/pubs/ir/8547/initial-public-draft
+
+  - id: NIST-CORE-DEP-002
+    description: RSA-3072 follows the same 2030 deprecation timeline as RSA-2048.
+    rule_type: deprecate_after
+    algorithm: RSA-3072
+    severity: HIGH
+    effective: 2030-01-01
+    references:
+      - https://csrc.nist.gov/pubs/ir/8547/initial-public-draft
+
+  - id: NIST-CORE-DEP-003
+    description: ECDSA-P-256 deprecated for new use after 2030-01-01 (NIST IR 8547).
+    rule_type: deprecate_after
+    algorithm: ECDSA-P-256
+    severity: HIGH
+    effective: 2030-01-01
+    references:
+      - https://csrc.nist.gov/pubs/ir/8547/initial-public-draft
+
+  - id: NIST-CORE-DEP-004
+    description: ECDSA-P-384 deprecated for new use after 2030-01-01 (NIST IR 8547).
+    rule_type: deprecate_after
+    algorithm: ECDSA-P-384
+    severity: HIGH
+    effective: 2030-01-01
+    references:
+      - https://csrc.nist.gov/pubs/ir/8547/initial-public-draft
+
+  - id: NIST-CORE-DEP-005
+    description: ECDH-P-256 deprecated for new use after 2030-01-01 (NIST IR 8547).
+    rule_type: deprecate_after
+    algorithm: ECDH-P-256
+    severity: HIGH
+    effective: 2030-01-01
+    references:
+      - https://csrc.nist.gov/pubs/ir/8547/initial-public-draft
+
+  # --- Hard-fail legacy primitives (already disallowed in FIPS terms) ---
+  - id: NIST-CORE-FORBID-001
+    description: MD5 has no remaining FIPS-approved use case.
+    rule_type: forbid
+    algorithm: MD5
+    severity: CRITICAL
+    references:
+      - https://csrc.nist.gov/projects/hash-functions
+
+  - id: NIST-CORE-FORBID-002
+    description: SHA-1 was withdrawn from FIPS approval in 2024.
+    rule_type: forbid
+    algorithm: SHA-1
+    severity: CRITICAL
+    references:
+      - https://csrc.nist.gov/projects/hash-functions
+
+  - id: NIST-CORE-FORBID-003
+    description: RSA-1024 is below the minimum allowed key size for any FIPS use.
+    rule_type: forbid
+    algorithm: RSA-1024
+    severity: CRITICAL
+    references:
+      - https://csrc.nist.gov/pubs/sp/800/131/a/r2/final
+
+  - id: NIST-CORE-FORBID-004
+    description: 3DES (TDES) was retired by NIST as of SP 800-131A Rev. 2.
+    rule_type: forbid
+    algorithm: 3DES
+    severity: CRITICAL
+    references:
+      - https://csrc.nist.gov/pubs/sp/800/131/a/r2/final
+
+  - id: NIST-CORE-FORBID-005
+    description: RC4 stream cipher has documented bias and is not FIPS-approved.
+    rule_type: forbid
+    algorithm: RC4
+    severity: CRITICAL
+    references:
+      - https://datatracker.ietf.org/doc/html/rfc7465

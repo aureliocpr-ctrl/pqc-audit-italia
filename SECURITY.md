@@ -70,6 +70,36 @@ The `TLSScanner` (`pqc_audit/scanners/tls_scanner.py`) disables certificate-chai
 
 `pqc_audit/policies/__init__.py` validates the `--policy` argument against `^[A-Za-z0-9][A-Za-z0-9_-]*$` and verifies the resolved path stays inside the bundled policies directory. A hostile `--policy ../../etc/foo` is rejected before reaching `yaml.safe_load` (CWE-22 / CWE-73).
 
+### Rule pack names are whitelisted (since 0.3.0)
+
+`pqc_audit/rule_packs/__init__.py` applies the same whitelist regex and post-resolve directory check to the new composable rule pack loader, so the same protection extends to `--rule-packs nist-core-2026,...` style invocations. Every rule pack is also validated against a strict pydantic schema — packs missing `provenance` or carrying unknown artifact types fail closed at load time rather than producing silently-wrong audit evidence at runtime.
+
+### SAML XML parsing rejects XXE / billion laughs (since 0.3.0)
+
+`pqc_audit/scanners/saml_scanner.py` parses through `defusedxml.ElementTree`. Any `<!DOCTYPE>` with external entities or a recursive entity payload is refused before reaching the XML walker — a hostile SAMLResponse cannot turn the SAML scanner into a local-file-read primitive (CWE-611, CWE-776). Refusal is surfaced as `ScanResult.errors`; the rest of the scan proceeds normally.
+
+## Verifying release artifacts
+
+Releases from 0.3.0 onward are signed with Sigstore keyless and ship with a SLSA v1.0 build provenance attestation. The recommended verification steps:
+
+```bash
+# 1. Download the release tarball / wheel from PyPI or GitHub Releases.
+pip download --no-deps pqc-audit-italia==0.3.0
+# 2. Verify the Sigstore bundle that ships next to each artifact.
+sigstore verify identity \
+  --cert-identity-regexp '^https://github.com/aureliocpr-ctrl/pqc-audit-italia/' \
+  --cert-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  pqc_audit_italia-0.3.0.tar.gz
+# 3. Verify the SLSA provenance asset on the GitHub release.
+slsa-verifier verify-artifact \
+  --provenance-path multiple.intoto.jsonl \
+  --source-uri github.com/aureliocpr-ctrl/pqc-audit-italia \
+  --source-tag v0.3.0 \
+  pqc_audit_italia-0.3.0.tar.gz
+```
+
+PyPI uploads go through Trusted Publishing (OIDC) — no long-lived PyPI tokens exist in the repository or in GitHub Actions secrets.
+
 ## Hall of fame
 
 Security researchers who responsibly disclose valid vulnerabilities will be credited in `SECURITY-HALL-OF-FAME.md` (created on first acknowledgement) unless they prefer to remain anonymous.

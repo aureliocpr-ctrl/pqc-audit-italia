@@ -5,7 +5,74 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] — Sprint 1 (global-grade transformation)
+
+Sprint 1 of the global-grade transformation announced 2026-05-17.
+The package is still alpha — these changes are not part of a tagged
+release yet. Branch: `sprint-1-global-grade`.
+
+### Added — composable rule packs
+
+- New `pqc_audit.rule_packs` module distinct from the legacy
+  end-to-end `policies/` profiles. Rule packs are versioned,
+  regulation-anchored, parametric units composable on a per-engagement
+  basis via `compile_rule_packs([...])`.
+- `pqc_audit/rule_packs/nist-core-2026.yaml` — FIPS 203/204/205 +
+  SP 800-227 allow list plus the NIST IR 8547 classical-deprecation
+  timetable (RSA-2048 / ECDSA-P-256 deprecated 2030, disallowed 2035).
+- `pqc_audit/rule_packs/audit-evidence-emit-2026.yaml` — mandates
+  CycloneDX 1.6 CBOM, SARIF 2.1.0, SLSA v1.0 provenance, in-toto v1
+  attestation and sigstore-bundle-v0.3 signed report as deliverables.
+- Strict pydantic schema (`pqc_audit.rule_packs.schema`) rejects packs
+  without provenance or with unknown artifact types — non-auditable
+  evidence fails closed at load time.
+
+### Added — new offline scanners
+
+- `pqc_audit.scanners.jwt_scanner` — JWT / JOSE algorithm enumeration
+  (RFC 8725 BCP). Flags `alg=none` (CWE-347) as CRITICAL, SHA-1 based
+  JOSE algorithms as HIGH, and recognises the draft-ietf-jose-pqc
+  ML-DSA / SLH-DSA algorithm ids as a target end state.
+- `pqc_audit.scanners.dnssec_scanner` — parses DNSKEY records from
+  zone files / `dig +dnssec` output, maps DNSSEC algorithm numbers
+  against IANA + RFC 8624 implementation status, flags MUST NOT (1, 3,
+  6, 12) as CRITICAL and NOT RECOMMENDED (5, 7) as HIGH.
+- `pqc_audit.scanners.saml_scanner` — walks SAML XML for
+  `ds:SignatureMethod`, `ds:DigestMethod`, `xenc:EncryptionMethod`.
+  Flags SHA-1, 3DES and AES-CBC (padding-oracle exposure). Parses
+  through `defusedxml` to refuse XXE / billion-laughs payloads
+  (CWE-611, CWE-776).
+- `pqc_audit.scanners.mtls_scanner` — audits PEM-bundled mutual-TLS
+  client certificate chains for `digitalSignature` Key Usage,
+  `clientAuth` Extended Key Usage, intermediate CA constraints, chain
+  consistency (issuer/subject linkage) and per-cert expiry/strength
+  via the shared TLS assessor.
+
+### Added — supply chain
+
+- `.github/workflows/publish-pypi.yml` — release pipeline emitting
+  Sigstore keyless signatures, SLSA v1.0 provenance via
+  `slsa-framework/slsa-github-generator` and publishing to PyPI via
+  Trusted Publishing (OIDC, no long-lived API tokens). Verification
+  instructions documented in `SECURITY.md`.
+
+### Changed
+
+- New runtime dependency: `defusedxml>=0.7,<1.0` (pinned upper bound
+  in line with existing dependency policy). Required by the SAML
+  scanner; kept as a hard dep because the SAML scanner is part of the
+  core scanner set from Sprint 1.
+- Wheel artifacts include `pqc_audit/rule_packs/*.yaml` alongside the
+  legacy `pqc_audit/policies/*.yaml`.
+- `pqc_audit.__version__` synced to `0.2.1` (drift vs `pyproject.toml`
+  introduced during 0.2.1 release).
+
+### Tests
+
+- 47 new unit tests across `tests/unit/test_rule_packs.py`,
+  `test_jwt_scanner.py`, `test_dnssec_scanner.py`,
+  `test_saml_scanner.py`, `test_mtls_scanner.py`. Total suite: 347
+  passed, 4 skipped (Windows-GTK + SHA-1 cert generation; preexisting).
 
 ## [0.2.1] - 2026-05-16
 

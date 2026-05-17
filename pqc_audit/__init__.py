@@ -19,7 +19,7 @@ exposure to HNDL and Q-Day, and supports compliance mapping.
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 from pqc_audit.auditor import Auditor
 from pqc_audit.core.models import AuditReport, ScanResult
