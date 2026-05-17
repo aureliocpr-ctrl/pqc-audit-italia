@@ -25,8 +25,9 @@ import ssl
 from typing import Any
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
+from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, padding, rsa
 from cryptography.x509.oid import AuthorityInformationAccessOID
 
 from pqc_audit.core.algorithms import AlgorithmClass, classify_algorithm, is_deprecated
@@ -43,6 +44,10 @@ from pqc_audit.core.models import (
 from pqc_audit.scanners.base import ScanTarget
 
 _SCANNER_NAME = "tls"
+
+# RSASSA-PSS signature algorithm OID (RFC 8017). Detection-only — we
+# treat it via padding.PSS, all other RSA OIDs as PKCS1v15.
+_RSA_PSS_OID = "1.2.840.113549.1.1.10"
 
 # Minimum recommended sizes (NIST + AgID-aligned).
 _MIN_RSA_BITS = 2048
@@ -580,6 +585,169 @@ def assess_chain(
     return findings
 
 
+def _verify_one(cert: x509.Certificate, issuer_cert: x509.Certificate) -> tuple[bool, str | None]:  # noqa: PLR0911,PLR0912 — 4 supported key types, each needs its own branch
+    """Verify ``cert.signature`` against ``issuer_cert.public_key()``.
+
+    Returns ``(verified, error_string)``. Never raises — every supported
+    key type's verify() exception is captured and surfaced as an error
+    string the caller can log.
+    """
+    pk = issuer_cert.public_key()
+    sig = cert.signature
+    tbs = cert.tbs_certificate_bytes
+    try:
+        if isinstance(pk, rsa.RSAPublicKey):
+            hash_alg = cert.signature_hash_algorithm
+            if hash_alg is None:
+                return False, "RSA cert has no signature_hash_algorithm"
+            # Discriminate PSS vs. PKCS1v15 via the signature_algorithm_oid.
+            if cert.signature_algorithm_oid.dotted_string == _RSA_PSS_OID:
+                # Real RSASSA-PSS verification needs the actual saltLength,
+                # MGF1 hash, and trailerField from the cert's
+                # signature_algorithm_parameters. cryptography 41+ exposes
+                # ``signature_algorithm_parameters`` returning a padding
+                # object directly when the algorithm is PSS — use it when
+                # available, fall back to a defensive default otherwise.
+                pss_params = getattr(cert, "signature_algorithm_parameters", None)
+                if isinstance(pss_params, padding.PSS):
+                    pk.verify(sig, tbs, pss_params, hash_alg)
+                else:
+                    pk.verify(
+                        sig,
+                        tbs,
+                        padding.PSS(
+                            mgf=padding.MGF1(hash_alg),
+                            salt_length=hash_alg.digest_size,
+                        ),
+                        hash_alg,
+                    )
+            else:
+                pk.verify(sig, tbs, padding.PKCS1v15(), hash_alg)
+        elif isinstance(pk, ec.EllipticCurvePublicKey):
+            hash_alg = cert.signature_hash_algorithm
+            if hash_alg is None:
+                return False, "ECDSA cert has no signature_hash_algorithm"
+            pk.verify(sig, tbs, ec.ECDSA(hash_alg))
+        elif isinstance(pk, (ed25519.Ed25519PublicKey, ed448.Ed448PublicKey)):
+            pk.verify(sig, tbs)
+        elif isinstance(pk, dsa.DSAPublicKey):
+            hash_alg = cert.signature_hash_algorithm
+            if hash_alg is None:
+                return False, "DSA cert has no signature_hash_algorithm"
+            pk.verify(sig, tbs, hash_alg)
+        else:
+            return False, f"unsupported issuer key type {type(pk).__name__}"
+    except InvalidSignature:
+        return False, "InvalidSignature"
+    except Exception as e:  # noqa: BLE001 — surface ANY verify failure as an error string
+        return False, f"{type(e).__name__}: {e}"
+    return True, None
+
+
+def verify_chain_signatures(chain: list[x509.Certificate]) -> list[dict[str, Any]]:
+    """Verify every cert.signature in the chain against its issuer's key.
+
+    Returns one verdict dict per chain index::
+
+        {"index": int, "label": str, "verified": bool, "verifiable": bool,
+         "error": str | None}
+
+    Verification rules:
+
+    * Self-signed cert (subject == issuer): verify against its OWN
+      public key. ``verifiable=True``.
+    * Any other cert at index ``i``: verify against ``chain[i+1]``'s
+      public key (TLS chain ordering: leaf first, issuer next).
+      ``verifiable=True``.
+    * Non-self-signed cert that is the LAST element of the chain (no
+      issuer available locally): ``verifiable=False``, ``verified=False``.
+      This is the standard TLS pattern — servers ship leaf + intermediate(s)
+      but NOT the root, which lives in the client trust store. An audit
+      report MUST NOT treat this as a broken signature: a real LE / DigiCert
+      / actalis chain trips it on every scan. Reporters filter on
+      ``verifiable`` before raising chain-breakage findings.
+    """
+    results: list[dict[str, Any]] = []
+    positions = classify_chain_positions(chain)
+    n = len(chain)
+    for i, cert in enumerate(chain):
+        label = positions[i] if i < len(positions) else f"index-{i}"
+        if cert.subject == cert.issuer:
+            verified, error = _verify_one(cert, cert)
+            verifiable = True
+        elif i + 1 < n:
+            verified, error = _verify_one(cert, chain[i + 1])
+            verifiable = True
+        else:
+            # Non-self-signed LAST cert — issuer (root) sits in the
+            # client trust store, not on the wire. NOT a finding.
+            verified, error = False, "issuer cert not present in chain (root in trust store)"
+            verifiable = False
+        results.append(
+            {
+                "index": i,
+                "label": label,
+                "verified": verified,
+                "verifiable": verifiable,
+                "error": error,
+            }
+        )
+    return results
+
+
+def assess_chain_signatures(
+    results: list[dict[str, Any]],
+    *,
+    leaf_asset_id: str,
+) -> list[Vulnerability]:
+    """Produce findings for every broken signature link in the chain.
+
+    Each unverified cert becomes a HIGH CWE-295 finding ("Improper
+    Certificate Validation"). ``affected_asset_ids`` points at the
+    position-suffixed asset id (e.g. ``tls://host:443#intermediate-1``).
+    Leaf-level findings point at the canonical ``leaf_asset_id``.
+    """
+    findings: list[Vulnerability] = []
+    for entry in results:
+        # Skip both the verified-OK case AND the not-verifiable case
+        # (root sits in the client trust store — that's standard TLS,
+        # not a broken signature).
+        if entry.get("verified", False):
+            continue
+        if not entry.get("verifiable", True):
+            continue
+        label = entry.get("label", f"index-{entry.get('index', '?')}")
+        if label == "leaf":
+            sub_asset_id = leaf_asset_id
+            title_suffix = ""
+        else:
+            sub_asset_id = f"{leaf_asset_id}#{label}"
+            title_suffix = f" [{label}]"
+        err = entry.get("error") or "unknown"
+        findings.append(
+            Vulnerability(
+                title=f"Broken chain signature{title_suffix}",
+                description=(
+                    f"Cryptographic verification of the certificate's "
+                    f"signature against its claimed issuer's public key "
+                    f"failed: {err}. The server is presenting a chain "
+                    "whose cryptographic linkage cannot be proven — "
+                    "either a misconfigured deployment (wrong intermediate "
+                    "shipped) or a hostile blob substitution. A modern "
+                    "TLS client would refuse the connection."
+                ),
+                severity=RiskLevel.HIGH,
+                cwe="CWE-295",
+                affected_asset_ids=(sub_asset_id,),
+                references=(
+                    "https://www.rfc-editor.org/rfc/rfc5280",
+                    "https://www.rfc-editor.org/rfc/rfc8446",
+                ),
+            )
+        )
+    return findings
+
+
 async def _handshake(host: str, port: int, *, timeout_s: float = 8.0) -> dict[str, Any]:
     """Perform a TLS handshake and capture the peer certificate chain.
 
@@ -676,6 +844,15 @@ class TLSScanner:
                     leaf_km = certificate_to_key_material(leaf_cert)
                     leaf_hash = extract_signature_hash_name(leaf_cert)
                     leaf_revocation = extract_revocation_info(leaf_cert)
+                    # Sprint 9d.2 — cryptographic chain verification.
+                    # A "verified" chain means every VERIFIABLE link
+                    # checked out — the non-verifiable last hop (root
+                    # in client trust store) does not count against it.
+                    chain_verify_results = verify_chain_signatures(chain_certs)
+                    chain_signatures_verified = all(
+                        r["verified"] for r in chain_verify_results
+                        if r.get("verifiable", True)
+                    )
                     leaf_asset_id = f"tls://{target_repr}"
                     assets.append(
                         CryptoAsset(
@@ -705,6 +882,8 @@ class TLSScanner:
                                     "crl_distribution_points"
                                 ],
                                 "must_staple": leaf_revocation["must_staple"],
+                                # Sprint 9d.2 — chain cryptographic verify
+                                "chain_signatures_verified": chain_signatures_verified,
                             },
                         )
                     )
@@ -742,6 +921,11 @@ class TLSScanner:
                             )
                         )
                     vulns.extend(assess_chain(chain_certs, leaf_asset_id=leaf_asset_id))
+                    vulns.extend(
+                        assess_chain_signatures(
+                            chain_verify_results, leaf_asset_id=leaf_asset_id
+                        )
+                    )
         except Exception as e:  # noqa: BLE001 — surfaced to caller as a soft error
             errors.append(f"{type(e).__name__}: {e}")
 

@@ -28,6 +28,115 @@ before being sent to a qualified service. Anything beyond that
 (qualified accreditation paperwork, eIDAS conformance assessment)
 sits outside this repository.
 
+## [Unreleased] — Sprint 9d.2 (cryptographic chain signature verification)
+
+Sprint 9d.2 (2026-05-17) closes the explicit gap documented in Sprint
+9d: *"No cryptographic chain verification. We surface what the server
+sent, not whether the signatures actually chain."* A hostile server
+could send three unrelated DER blobs and we would emit three "real"
+crypto-asset findings — until now.
+
+### What's verified
+
+For every chain element, `cert.signature` is checked against the
+issuer cert's public key using `cryptography.hazmat`:
+
+- **RSA**: PKCS1v15 (default) or PSS (when
+  `signature_algorithm_oid = 1.2.840.113549.1.1.10`), using PSS
+  parameters from `cert.signature_algorithm_parameters` when
+  available, otherwise a defensive `MGF1(hash_alg)` +
+  `salt_length=hash_alg.digest_size`.
+- **ECDSA**: `ec.ECDSA(hash_alg)`.
+- **Ed25519 / Ed448**: pure `verify(signature, tbs)` (no padding
+  argument).
+- **DSA**: `pk.verify(sig, tbs, hash_alg)`.
+
+The verifier returns one verdict dict per cert with **four** stable
+keys: `index`, `label` (from `classify_chain_positions`), `verified`
+(bool), and **`verifiable`** (bool — see below) plus an optional
+`error` string.
+
+### Critical anti-fuffa contract: the missing-root case
+
+Standard TLS practice is for servers to ship `[leaf, intermediate]`
+and let the client resolve the root from its trust store. AGID's
+Let's Encrypt cert does exactly that: `chain_length=2`, last cert is
+the LE E7 intermediate (non-self-signed), root `ISRG Root X1` is NOT
+on the wire. A naive verifier would mark "intermediate's signature
+cannot be verified" as a HIGH CWE-295 finding — **fuffa**: it's the
+standard pattern, every modern cert chain trips it.
+
+Sprint 9d.2 fix: a non-self-signed cert that is the LAST element of
+the chain is marked `verifiable=False`. `assess_chain_signatures`
+filters on `verifiable=True` before emitting findings — the LE
+pattern produces **zero** false-positive broken-chain findings.
+Empirically verified pre-fix → post-fix on AGID:
+
+| Run | Vulnerability list |
+|---|---|
+| pre-fix | 2 HIGH ECDSA-vulnerable + **1 HIGH "Broken chain signature [intermediate-1]"** (fuffa) |
+| post-fix | 2 HIGH ECDSA-vulnerable, **no broken-chain finding** |
+
+This is the third anti-fuffa cycle this day after X448 (Sprint 9f)
+and LE OCSP retirement (Sprint 9g.1). Pattern validated: a single
+empirical scan against a REAL Italian PA endpoint catches the kind
+of false positive a fixture-only test suite would miss.
+
+### Added
+
+- `pqc_audit.scanners.tls_scanner._verify_one(cert, issuer_cert)` —
+  internal helper, never raises, returns `(verified, error_string)`
+  across all 4 supported key types.
+- `pqc_audit.scanners.tls_scanner.verify_chain_signatures(chain)` —
+  returns `list[dict]` with the 5-key verdict structure above.
+- `pqc_audit.scanners.tls_scanner.assess_chain_signatures(results,
+  leaf_asset_id)` — emits HIGH CWE-295 findings for every BROKEN
+  verifiable link. Filters out `verifiable=False` to avoid
+  false-positives on the LE / DigiCert / Actalis pattern.
+- `TLSScanner.scan` populates a new leaf metadata key
+  `chain_signatures_verified: bool` aggregating the verdicts
+  (True iff every verifiable link checked out). Existing chain_*
+  metadata is unchanged.
+- 10 new pytest cases in `tests/unit/test_scanners_tls_chain_verify.py`
+  covering: intact 3-cert chain, tampered leaf, tampered intermediate,
+  single-cert (root only) chain, error-string contract on failure,
+  HIGH finding on broken leaf, no findings on intact chain, the
+  empirical **LE-style 2-cert anti-fuffa regression test**, and the
+  scanner-integration `chain_signatures_verified=True` propagation.
+
+### Empirically verified end-to-end (REAL endpoint)
+
+`www.agid.gov.it:443` with `PQC_AUDIT_FROZEN_AT=2026-05-17T00:00:00Z`:
+
+| Field | Value |
+|---|---|
+| chain_signatures_verified | **`true`** (leaf ECDSA-256 signature verifies against LE E7 intermediate ECDSA-384 public key) |
+| Broken-chain finding | **NOT emitted** (LE 2-cert pattern correctly handled) |
+| Existing 2 HIGH ECDSA-vulnerable findings | preserved |
+
+The leaf signature → intermediate public key verification was
+hand-confirmed earlier with `pk.verify(leaf.signature,
+leaf.tbs_certificate_bytes, ec.ECDSA(SHA384()))` against the real
+DER fetched from agid.gov.it.
+
+### Honest gap list (NOT done in 9d.2 — explicit roadmap)
+
+- **No root trust-store lookup.** The non-verifiable last hop
+  (root in client store) stays non-verifiable. We do NOT walk
+  `/etc/ssl/certs` or the platform store to resolve it. Sprint
+  9d.3 candidate; would let us tell "Let's Encrypt → ISRG" vs
+  "Aruba → AgID-accredited root" from a single passive scan.
+- **No revocation checking.** Verifying that a cert's signature
+  is valid does NOT mean the cert is still valid. OCSP/CRL active
+  fetch lives in Sprint 9g.2.
+- **No chain path-length / EKU enforcement.** RFC 5280 imposes
+  pathLenConstraint and ExtendedKeyUsage chaining rules; we don't
+  audit either.
+- **PSS-without-parameters** falls back to MGF1(hash_alg) +
+  salt=hash.digest_size which is the *common* deployment but not
+  universal. Real-world RSASSA-PSS chains needing different salt
+  lengths would mis-verify.
+
 ## [Unreleased] — Sprint 9h (NIS2 / D.Lgs. 138/2024 article mapping)
 
 Sprint 9h (2026-05-17) closes the gap between **technical** findings
