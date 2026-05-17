@@ -152,6 +152,43 @@ def scan_pqc_hybrid_cmd(
     typer.echo(render_json(report, pretty=pretty))
 
 
+@scan_app.command("pqc-mldsa-sig")
+def scan_pqc_mldsa_sig_cmd(
+    host: str = typer.Option(..., "--host", help="Hostname or IP to connect to."),
+    port: int = typer.Option(443, "--port", help="TCP port (default: 443)."),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Probe a TLS 1.3 endpoint for ML-DSA signature_algorithms support.
+
+    Runs three ``openssl s_client -sigalgs <MLDSA*>`` handshakes — one per
+    draft-ietf-tls-mldsa-03 codepoint (MLDSA44 0x0904, MLDSA65 0x0905,
+    MLDSA87 0x0906) — and reports the per-codepoint status
+    (``supported`` / ``not_supported`` / ``error``). Requires
+    ``openssl`` 3.5+ in PATH.
+
+    SLH-DSA is intentionally NOT probed: no TLS 1.3 SignatureScheme
+    codepoint is registered for SLH-DSA as of 2026-05-17 (only X.509
+    via RFC 9909 and CMS via RFC 9814).
+    """
+    # Lazy import keeps openssl subprocess cost out of the top-level
+    # CLI import — also reduces module-import time for users that
+    # never invoke this subcommand.
+    from pqc_audit.scanners.tls_pqc_sig import (  # noqa: PLC0415
+        probe_all_mldsa_sigalgs,
+    )
+
+    results = probe_all_mldsa_sigalgs(host, port)
+    payload: dict = {
+        "host": host,
+        "port": port,
+        "probe": "tls13-signature-algorithms-mldsa",
+        "reference": "draft-ietf-tls-mldsa-03",
+        "results": results,
+    }
+    indent = 2 if pretty else None
+    typer.echo(json.dumps(payload, indent=indent, ensure_ascii=False))
+
+
 @scan_app.command("certs")
 def scan_certs_cmd(
     path: str = typer.Option(

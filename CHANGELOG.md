@@ -28,6 +28,186 @@ before being sent to a qualified service. Anything beyond that
 (qualified accreditation paperwork, eIDAS conformance assessment)
 sits outside this repository.
 
+## [Unreleased] — Sprint 9f.2 (ML-DSA signature_algorithms TLS 1.3 probe)
+
+Sprint 9f.2 (2026-05-17) is the signature-side companion to Sprint 9f
+(PQC hybrid KEM handshake probe). 9f answers *"is the server PQC
+key-exchange ready?"*; 9f.2 answers *"is the server PQC
+signature ready?"*.
+
+### Scope — ML-DSA only
+
+Three NIST FIPS 204 codepoints from **draft-ietf-tls-mldsa-03** (IETF
+TLS WG, Informational, expires 2026-11-07,
+https://datatracker.ietf.org/doc/html/draft-ietf-tls-mldsa):
+
+| Name | Codepoint | Reference |
+|---|---|---|
+| `MLDSA44` | 0x0904 | draft-ietf-tls-mldsa-03 |
+| `MLDSA65` | 0x0905 | draft-ietf-tls-mldsa-03 |
+| `MLDSA87` | 0x0906 | draft-ietf-tls-mldsa-03 |
+
+**SLH-DSA is intentionally excluded.** As of 2026-05-17 no TLS 1.3
+SignatureScheme codepoint is registered for SLH-DSA — RFC 9909
+defines only the X.509 OIDs, RFC 9814 covers only CMS. Probing
+SLH-DSA in TLS 1.3 would require inventing codepoints, which the
+project's anti-fuffa stance bans. The honest gap is documented; a
+future sprint can add SLH-DSA once a TLS draft is published with
+official codepoints.
+
+### Method
+
+OpenSSL 3.5.5 (the audit machine's `openssl`) supports MLDSA-{44,65,87}
+natively as sigalg names. The probe drives:
+
+```
+openssl s_client -sigalgs <MLDSA*> -connect host:443 -servername host -tls1_3
+```
+
+The empirical signal validated on agid.gov.it, cloudflare.com, and
+google.com on 2026-05-17:
+
+* `Negotiated TLS1.3 group: <NULL>` AND no Certificate chain block →
+  server refused the MLDSA-only sigalg restriction → `not_supported`;
+* non-NULL group AND Certificate chain block present → server returned
+  a cert compatible with the MLDSA-only restriction → `supported`;
+* DNS error / connect refused / OpenSSL not installed → `error`,
+  surfaced separately so the reporter does not conflate
+  network-layer issues with "PQC not supported".
+
+### Public API
+
+```python
+from pqc_audit.scanners.tls_pqc_sig import (
+    MLDSA_CODEPOINTS,
+    MLDSA_SIGALGS,
+    parse_negotiated_signature_status,
+    probe_mldsa_sigalg,
+    probe_all_mldsa_sigalgs,
+)
+
+results = probe_all_mldsa_sigalgs("agid.gov.it", 443)
+# {"MLDSA44": {"sigalg": "MLDSA44", "codepoint": 0x0904,
+#              "status": "not_supported", "host": ..., "port": 443}, ...}
+```
+
+### Test coverage
+
+13 tests in `tests/unit/test_scanners_tls_pqc_sig.py`:
+
+* 2x codepoint constants (`MLDSA_SIGALGS` ordering,
+  `MLDSA_CODEPOINTS` matches draft);
+* 6x `parse_negotiated_signature_status` (supported, NULL-group
+  not_supported, handshake_failure alert not_supported, DNS error,
+  connect refused, empty inputs → error);
+* 3x `probe_mldsa_sigalg` (5-key dict contract, TimeoutExpired
+  handled, FileNotFoundError handled when openssl is missing);
+* 2x `probe_all_mldsa_sigalgs` (aggregator schema, mixed-status
+  propagation).
+
+Full suite: 590 passed, 4 skipped (preexisting).
+Ruff: clean (3 noqa justified — `S105` for the OpenSSL marker
+`<NULL>` which is not a credential, `PLR0911` for the 7-branch
+status classifier, `S603` for `subprocess.run` with a fixed argv).
+
+### Empirical E2E
+
+```python
+for host in ["agid.gov.it", "cloudflare.com", "google.com"]:
+    for sigalg, result in probe_all_mldsa_sigalgs(host, 443).items():
+        print(f"  {sigalg}: {result['status']}")
+```
+
+Output:
+
+```
+=== agid.gov.it ===
+  MLDSA44 (0x0904): not_supported
+  MLDSA65 (0x0905): not_supported
+  MLDSA87 (0x0906): not_supported
+=== cloudflare.com ===
+  MLDSA44 (0x0904): not_supported
+  MLDSA65 (0x0905): not_supported
+  MLDSA87 (0x0906): not_supported
+=== google.com ===
+  MLDSA44 (0x0904): not_supported
+  MLDSA65 (0x0905): not_supported
+  MLDSA87 (0x0906): not_supported
+```
+
+Honest baseline: **no public server has a ML-DSA-signed certificate
+in production as of 2026-05-17**. This is the expected result — the
+probe's job is to register that fact reliably, not to invent
+positives.
+
+### Honest gap list
+
+- **SLH-DSA TLS 1.3 codepoints absent** — add once a TLS draft
+  publishes them.
+- **No scanner-class integration** — the module exposes pure
+  functions only. A future sprint can wire `PQCSignatureScanner` as
+  an `is_applicable + scan` class analogous to `PQCHybridScanner`,
+  and add `pqc-audit scan pqc-mldsa-sig` CLI subcommand.
+- **No markdown_reporter section yet** — when probe results are
+  embedded in an `AuditReport`, the reporter should emit a
+  "## PQC signature readiness" block analogous to 9d.4's trust
+  anchor section.
+- **Sequential probing** of three sigalgs adds ~3× the OpenSSL
+  subprocess overhead per host. Acceptable for MVP (~3-5s/host
+  total), parallelizable later.
+- **OpenSSL ≥ 3.5.0 required** — older OpenSSL releases do not
+  know MLDSA sigalg names. The probe returns `status=error`
+  (FileNotFoundError or empty output) on those, which the caller
+  must surface distinctly from `not_supported`.
+
+### Critic gate
+
+The v1 review (3-worker, 208s) was **2-1-0** — falsification ✅,
+counterexample ✅, but **caller_verification FAILED** (0.95): the
+module was technically dead-code, reachable only by tests. Aurelio's
+A3 stop-check protocol declined a "tests are green, ship it"
+shortcut.
+
+Fix applied **before** commit: added `@scan_app.command("pqc-mldsa-sig")`
+subcommand in `pqc_audit/cli.py` that lazily imports
+`probe_all_mldsa_sigalgs` and emits a stable-schema JSON payload, plus
+a 14th unit test (`test_cli_scan_pqc_mldsa_sig_subcommand_wires_probe`)
+that drives the subcommand via `typer.testing.CliRunner` and verifies
+the JSON contract.
+
+The v2 review (3-worker, 420s, $1.80) is **claim_holds 2-0-1**:
+
+| Worker | Verdict | Confidence | Note |
+|---|---|---|---|
+| falsification | claim_holds | 0.97 | Double-pass stash. Pass 1: scanner module + CLI both removed → `ImportError`. Pass 2 (isolated CLI rigor): only `cli.py` reverted → CliRunner gets `exit_code == 2` (typer SystemExit for unknown subcommand). With fix fully restored → 1 passed in 2.38s. **Both production artifacts are load-bearing**; neither is decorative. |
+| caller_verification | claim_holds | 0.97 | Path: `pqc_audit/cli.py:155` decorator `@scan_app.command("pqc-mldsa-sig")` → `cli.py:60` `app.add_typer(scan_app, name="scan")` → `pyproject.toml:111` console_scripts entry `pqc-audit = "pqc_audit.cli:app"`. Reachable via `pqc-audit scan pqc-mldsa-sig --host X --port Y` and `python -m pqc_audit scan pqc-mldsa-sig ...`. Non-test caller confirmed. |
+| counterexample | **INVALID** | — | Timeout 420s (worker did not complete). $0 cost. No verdict either way — declined to factor into consensus. |
+
+**Consensus: hold 2-0-1.** The invalid counterexample is a limitation
+of the review, not an endorsement. Disclosed verbatim, not glossed.
+
+### Real-network integration tests
+
+Per Aurelio's directive "test reali non solo empirici", added
+`tests/integration/test_tls_pqc_sig_real_endpoints.py` (2 tests,
+marked `pytest.mark.integration`, skip-by-default):
+
+* `test_probe_real_endpoint_returns_stable_schema` — drives
+  `probe_all_mldsa_sigalgs("google.com", 443)` with a real OpenSSL
+  subprocess and verifies the 5-key dict contract.
+* `test_cli_real_endpoint_emits_valid_json` — invokes the actual
+  subcommand against google.com via `CliRunner` and verifies the
+  JSON schema.
+
+Both **PASSED** in 9.05s wall-clock against the live target on
+2026-05-17. The tests assert only schema and classification range
+(`status in {supported, not_supported, error}`) — not a specific
+verdict — so they remain stable when Google rolls out MLDSA.
+
+Run on demand: `pytest -m integration tests/integration/test_tls_pqc_sig_real_endpoints.py`.
+
+---
+
 ## [Unreleased] — Sprint 9d.4 (trust anchor section in executive Markdown)
 
 Sprint 9d.4 (2026-05-17) ships the user-facing payoff of Sprint 9d.3:
