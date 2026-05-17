@@ -57,9 +57,7 @@ def test_scan_jwt_against_alg_none_token_produces_critical(tmp_path: Path) -> No
 
 
 def test_scan_jwt_missing_path_records_error(tmp_path: Path) -> None:
-    result = runner.invoke(
-        app, ["scan", "jwt", "--path", str(tmp_path / "nope.jwt"), "--compact"]
-    )
+    result = runner.invoke(app, ["scan", "jwt", "--path", str(tmp_path / "nope.jwt"), "--compact"])
     assert result.exit_code == 0, result.stdout
     parsed = json.loads(result.stdout)
     sr = parsed["scan_results"][0]
@@ -215,10 +213,39 @@ def test_scan_mtls_against_valid_chain_returns_two_assets(tmp_path: Path) -> Non
 
 
 def test_scan_mtls_missing_path_records_error(tmp_path: Path) -> None:
-    result = runner.invoke(
-        app, ["scan", "mtls", "--path", str(tmp_path / "nope.pem"), "--compact"]
-    )
+    result = runner.invoke(app, ["scan", "mtls", "--path", str(tmp_path / "nope.pem"), "--compact"])
     assert result.exit_code == 0, result.stdout
     parsed = json.loads(result.stdout)
     sr = parsed["scan_results"][0]
+    assert sr["errors"]
+
+
+# ---------------------------------------------------------------------------
+# IaC (Sprint 4 #3)
+# ---------------------------------------------------------------------------
+
+
+def test_scan_iac_against_terraform_rsa_2048_flags_high(tmp_path: Path) -> None:
+    tf = tmp_path / "kms.tf"
+    tf.write_text(
+        'resource "aws_kms_key" "x" {\n  customer_master_key_spec = "RSA_2048"\n}\n',
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["scan", "iac", "--path", str(tmp_path), "--compact"])
+    assert result.exit_code == 0, result.stdout
+    parsed = json.loads(result.stdout)
+    sr = parsed["scan_results"][0]
+    assert sr["scanner_name"] == "iac"
+    assert sr["assets"]
+    severities = {v["severity"] for v in sr["vulnerabilities"]}
+    assert "HIGH" in severities
+
+
+def test_scan_iac_missing_path_records_error(tmp_path: Path) -> None:
+    bogus = tmp_path / "does_not_exist"
+    result = runner.invoke(app, ["scan", "iac", "--path", str(bogus), "--compact"])
+    assert result.exit_code == 0, result.stdout
+    parsed = json.loads(result.stdout)
+    sr = parsed["scan_results"][0]
+    assert sr["assets"] == []
     assert sr["errors"]

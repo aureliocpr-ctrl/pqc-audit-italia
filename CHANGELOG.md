@@ -46,6 +46,29 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   public Python API used by pqc-audit (X509, EC, RSA, hazmat). Full
   local unit suite re-ran green on 46.0.7.
 
+### Added — Infrastructure-as-Code scanner (Sprint 4 #3)
+
+- `pqc_audit.scanners.iac_scanner` — new regex-based scanner walking
+  Terraform `.tf`, Kubernetes YAML, CloudFormation JSON / YAML files.
+  V1 pattern catalog flags AWS KMS `customer_master_key_spec`
+  (RSA-2048/3072/4096, ECC-NIST-P256/P384), AWS ACM `key_algorithm`
+  (RSA-1024 CRITICAL), TLS version pinning (1.0/1.1 CRITICAL per RFC
+  8996), and forbidden primitives RC4 / 3DES / MD5 / SHA-1 appearing
+  as bounded tokens. False-positive guard: word-boundary regex and a
+  comment stripper for `#` and `//` leaders so brand names like
+  `ELBSecurityPolicy-WithRC4` do not trigger.
+- New CLI subcommand `pqc-audit scan iac --path DIR_OR_FILE`.
+- New `ScanTarget` literal `iac` mapped to `ScanCategory.CODE`.
+- 14 unit tests pin the v1 pattern catalog +
+  2 CLI tests for the subcommand.
+- File walker caps at 10 000 files and 5 MiB per file (CWE-400).
+
+### Changed — repo-wide `ruff format`
+
+- Applied `ruff format` to the entire repo (14 files) to align with
+  the CI gate `ruff format --check .`. No logic changes — purely
+  whitespace / quote-style / line-break normalization.
+
 ---
 
 ## Sprint 1-3 (global-grade transformation, tag v0.3.0-alpha1)

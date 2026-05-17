@@ -36,6 +36,7 @@ from pqc_audit.reporters.pdf_reporter import render as render_pdf
 from pqc_audit.reporters.sarif_reporter import render as render_sarif
 from pqc_audit.scanners.cert_scanner import CertificateScanner
 from pqc_audit.scanners.dnssec_scanner import DNSSECScanner
+from pqc_audit.scanners.iac_scanner import IaCScanner
 from pqc_audit.scanners.jwt_scanner import JWTScanner
 from pqc_audit.scanners.mtls_scanner import MTLSScanner
 from pqc_audit.scanners.saml_scanner import SAMLScanner
@@ -279,6 +280,40 @@ def scan_mtls_cmd(
         scanners=[MTLSScanner()],
     )
     target = ScanTarget(type="certs", path=path)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
+
+
+@scan_app.command("iac")
+def scan_iac_cmd(
+    path: str = typer.Option(
+        ...,
+        "--path",
+        help="Directory or single file containing IaC manifests (Terraform .tf, "
+        "CloudFormation JSON/YAML, Kubernetes YAML).",
+    ),
+    policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    data_sensitivity_years: int = typer.Option(
+        10,
+        "--data-sensitivity-years",
+        help="Assumed lifetime of confidential data, drives HNDL scoring (default: 10).",
+    ),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Scan Infrastructure-as-Code manifests for quantum-vulnerable primitives.
+
+    Walks the directory looking for ``*.tf``, ``*.yaml``, ``*.yml`` and
+    ``*.json`` files and flags declarations of RSA-1024/2048/3072, ECC
+    P-256/P-384, RC4, 3DES, MD5, SHA-1, TLS 1.0/1.1, etc. Scope is
+    intentionally regex-based — see ``pqc_audit.scanners.iac_scanner``
+    for the pattern catalog and v2 roadmap notes.
+    """
+    auditor = Auditor(
+        policy=policy,
+        data_sensitivity_years=data_sensitivity_years,
+        scanners=[IaCScanner()],
+    )
+    target = ScanTarget(type="iac", path=path)
     report = asyncio.run(auditor.scan([target]))
     typer.echo(render_json(report, pretty=pretty))
 

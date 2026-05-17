@@ -26,6 +26,7 @@ TargetType = Literal[
     "code",
     "config",
     "token",
+    "iac",
 ]
 
 
@@ -39,6 +40,7 @@ _TYPE_TO_CATEGORY: dict[str, ScanCategory] = {
     "code": ScanCategory.CODE,
     "config": ScanCategory.CONFIG,
     "token": ScanCategory.CONFIG,
+    "iac": ScanCategory.CODE,
 }
 
 
