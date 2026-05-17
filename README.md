@@ -5,7 +5,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Status: Beta](https://img.shields.io/badge/status-beta-yellow)](#roadmap)
-[![Tests: 250 green](https://img.shields.io/badge/tests-250%20green-success)](#development)
+[![Tests: 403 green](https://img.shields.io/badge/tests-403%20green-success)](#development)
 [![Coverage 90%](https://img.shields.io/badge/coverage-90%25-success)](#development)
 [![Ruff zero](https://img.shields.io/badge/ruff-zero-success)](#development)
 [![Mypy strict](https://img.shields.io/badge/mypy-strict-success)](#development)
@@ -46,6 +46,15 @@ It targets the Italian regulatory landscape (NIS2 D.Lgs. 138/2024, DORA Reg. (EU
 | **Batch portfolio scan** | **Ready (0.2.0)** | **`pqc-audit batch` — CSV / inline targets, concurrency, CI gate `--fail-on-violations`** |
 | **Snapshot diff** | **Ready (0.2.0)** | **`pqc-audit batch-diff` — improved / regressed / unchanged / added / removed** |
 | **Expired-cert detection** | **Ready (0.2.0)** | **CWE-298: HIGH severity flag for ``not_valid_after < now()``** |
+| **JWT / JOSE scanner** | **Ready (Sprint 1)** | **RFC 8725 BCP; flags ``alg=none`` (CWE-347), SHA-1 algs, unknown extensions** |
+| **DNSSEC scanner** | **Ready (Sprint 1)** | **IANA + RFC 8624; MUST NOT (1, 3, 6, 12) CRITICAL, NOT RECOMMENDED (5, 7) HIGH** |
+| **SAML scanner** | **Ready (Sprint 1)** | **XXE-safe (defusedxml); XMLDSig + XMLEnc URIs per W3C + RFC 6931** |
+| **mTLS chain scanner** | **Ready (Sprint 1)** | **Leaf digitalSignature KU + clientAuth EKU + intermediate CA constraints** |
+| **Composable rule packs** | **Ready (Sprint 1+4)** | **6 bundled YAML packs: NIST core, EU CRA+DORA+eIDAS2, IT NIS2 recepimento, AGID ABSC, FIPS strict, audit-evidence** |
+| **IaC scanner** | **Ready (Sprint 4)** | **Terraform / CloudFormation / Kubernetes — AWS KMS, ACM, TLS version pinning, RC4/3DES/MD5/SHA-1; CWE-400 walker caps** |
+| **JWKS endpoint scanner** | **Ready (Sprint 5)** | **RFC 7517 live HTTPS fetch + offline JSON file; SSRF guard (CWE-918); 1 MiB cap; refuses redirects + non-HTTPS** |
+| **Tauri desktop viewer** | **Ready (Sprint 2+3+4)** | **Cross-OS read-only viewer, ~47 kB gzipped, no network egress; pill-shaped severity badges** |
+| **CI: sigstore + SLSA L3** | **Ready (Sprint 1)** | **PyPI Trusted Publishing OIDC + sigstore keyless + SLSA v1.0 provenance** |
 | Compliance mapping | Ready | NIS2 art. 21, DORA art. 9, AgID Linee Guida, ISO 27001 A.10 |
 
 ### Bundled policies
@@ -56,6 +65,21 @@ It targets the Italian regulatory landscape (NIS2 D.Lgs. 138/2024, DORA Reg. (EU
 | `agid_2026` | Italian PA | AgID Linee Guida + Misure minime di sicurezza ICT |
 | `banking_italy` | Banks and SIMs | Banca d'Italia + DORA |
 | `pa_critical` | Healthcare, public safety, infrastructure | NIS2 D.Lgs. 138/2024 strict profile |
+
+### Bundled rule packs (composable, regulation-anchored)
+
+Distinct from the end-to-end *policies* above, rule packs are
+versioned YAML modules that the auditor composes on a per-engagement
+basis via `compile_rule_packs([...])`.
+
+| Name | Anchor | Use |
+|---|---|---|
+| `nist-core-2026` | FIPS 203/204/205 + SP 800-227 + IR 8547 timetable | Canonical NIST allow-list |
+| `audit-evidence-emit-2026` | CycloneDX 1.6 + SARIF 2.1.0 + SLSA v1.0 + in-toto v1 + sigstore | Mandate which artifacts to emit |
+| `eu-crypto-regulatory-2026` | EU CRA (Reg 2024/2847) + DORA (Reg 2022/2554) + eIDAS2 (Reg 2024/1183) + ENISA + ETSI 119 312 | EU market-access baseline |
+| `it-recepimento-nis2-2026` | D.Lgs. 138/2024 + ACN + Banca d'Italia Circ. 285 + AGID | Italian national layer |
+| `agid-absc-2026` | AGID Misure Minime ICT (ABSC) + PA PQC procurement | PA capitolato d'oneri 2026+ |
+| `fips-203-204-205-strict-2026` | NSA CNSA 2.0 (2022-09-07) | Classical RSA/ECDSA forbidden outright (no IR 8547 transition window) |
 
 ## Quick start
 
@@ -82,6 +106,30 @@ pqc-audit scan certs --path /etc/ssl/certs \
                      --policy banking_italy \
                      --data-sensitivity-years 20
 ```
+
+### IaC scan (Sprint 4)
+
+```bash
+# Terraform / Kubernetes / CloudFormation walker
+pqc-audit scan iac --path ./infrastructure/
+```
+
+Flags RSA-2048/3072 KMS keys, RSA-1024 ACM certificates, TLS 1.0/1.1
+pinning, RC4/3DES/MD5/SHA-1 references. Skips files > 5 MiB and
+respects `#` / `//` comment markers to reduce false positives.
+
+### JWKS endpoint scan (Sprint 5)
+
+```bash
+# Live HTTPS — SSRF-guarded, refuses redirects + non-https
+pqc-audit scan jwks --url https://auth.example.it/.well-known/jwks.json
+
+# Offline mode for airgapped audits
+pqc-audit scan jwks --path /audits/jwks-2026.json
+```
+
+Classifies every key (`kty` = RSA / EC / OKP / oct) and flags
+quantum-vulnerable primitives per NIST IR 8547.
 
 ### SSH scan
 
