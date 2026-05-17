@@ -28,6 +28,106 @@ before being sent to a qualified service. Anything beyond that
 (qualified accreditation paperwork, eIDAS conformance assessment)
 sits outside this repository.
 
+## [Unreleased] — Sprint 9d.4 (trust anchor section in executive Markdown)
+
+Sprint 9d.4 (2026-05-17) ships the user-facing payoff of Sprint 9d.3:
+the resolved trust anchor + CA pedigree are now displayed inline in
+every `pqc-audit report --format markdown` invocation. A DPO/CISO
+can see at a glance whether the audited target's root is an
+AgID-accredited qualified TSP or a commercial global CA, **without
+parsing the JSON metadata**.
+
+### New section: `## Trust anchor — CA radice`
+
+Inserted between `## Asset analizzati` and `## Vulnerabilità` (i.e.
+adjacent to the asset table, where the trust anchor logically
+belongs as the load-bearing endpoint of each chain).
+
+Layout: one row per leaf-position asset that carries the
+`trust_anchor` metadata key. Columns:
+
+| Target | Stato | Fonte | Root subject | Pedigree | Algoritmo | Key size | Hash | Trust store source |
+
+Italian-language labels:
+
+* **Pedigree** (`qualified_it_tsp` → `AgID-accreditata (TSP
+  qualificato italiano)`, `commercial_global` → `CA commerciale
+  globale`, `unknown` → `Sconosciuta — richiede verifica manuale`).
+* **Fonte** (`on_wire` → `presente sulla wire (server-shipped
+  root)`, `trust_store` → `risolta dal trust store locale`,
+  `unknown` → `non risolto`).
+* **Trust store source** is displayed verbatim (e.g. `certifi`,
+  `system_ca_bundle`) — we never relabel `certifi` as "the Windows
+  trust store" because it isn't.
+
+### Anti-fuffa contracts
+
+- **Skip on empty.** Section omitted when no leaf asset carries the
+  `trust_anchor` metadata key. Silence honest.
+- **Unresolved surfaced, not dropped.** When `resolved=False`, the
+  row is rendered with `Stato = non risolto` and `Fonte = non
+  risolto`, so the reader sees the gap.
+- **Pedigree disclaimer.** Section ends with a footnote stating that
+  `Sconosciuta` requires manual verification and that the pattern
+  list is a hand-curated subset, not a full AgID TSL catalogue.
+
+### Test coverage
+
+11 new tests in `tests/unit/test_markdown_reporter_trust_anchor.py`:
+
+| Test | Verifies |
+|---|---|
+| `test_trust_anchor_section_present_when_leaf_has_trust_anchor` | section appears with the heading and "CA radice" subtitle |
+| `test_trust_anchor_section_absent_when_no_leaf_carries_metadata` | section omitted gracefully |
+| `test_pedigree_qualified_it_tsp_uses_italian_label` | `AgID-accreditata` + `TSP qualificato italiano` |
+| `test_pedigree_commercial_global_uses_italian_label` | `CA commerciale globale` |
+| `test_pedigree_unknown_uses_italian_label` | `Sconosciuta` + `verifica manuale` |
+| `test_unresolved_trust_anchor_surfaced_as_non_risolto` | `non risolto` displayed |
+| `test_trust_store_source_certifi_disclosed_honestly` | `certifi` label visible verbatim |
+| `test_trust_store_source_system_ca_bundle_disclosed` | `system_ca_bundle` label visible |
+| `test_root_subject_visible_in_section` | Actalis subject string present |
+| `test_root_algorithm_and_key_size_visible` | RSA + 4096 in output |
+| `test_multiple_leaves_each_have_a_row` | one row per leaf, multi-target |
+
+Full suite: 577 passed, 4 skipped (preexisting).
+Ruff: clean.
+
+### Empirical E2E on aruba.it
+
+```
+python -m pqc_audit scan tls --host aruba.it --port 443 > aruba.json
+python -m pqc_audit report -i aruba.json -f markdown
+```
+
+Output (excerpt):
+
+```markdown
+## Trust anchor — CA radice
+
+| Target | Stato | Fonte | Root subject | Pedigree | Algoritmo | Key size | Hash | Trust store source |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `tls://aruba.it:443` | risolto | risolta dal trust store locale | `CN=Actalis Authentication Root CA,O=Actalis S.p.A./03358520967,L=Milan,C=IT` | AgID-accreditata (TSP qualificato italiano) | RSA | 4096 | SHA256 | `certifi` |
+```
+
+This is the first audit Markdown that **autonomously** identifies a
+production target as backed by an AgID-accredited Italian qualified
+TSP, end-to-end from network handshake through trust-store lookup
+through Italian-language report rendering.
+
+### Critic gate
+
+`critic-orchestrator` 3-worker adversarial review (144s, $1.67):
+
+| Worker | Verdict | Confidence | Note |
+|---|---|---|---|
+| falsification | claim_holds | 0.98 | Stash markdown_reporter.py + CHANGELOG.md, test untracked. Pre-fix: **10/11 FAIL** (markdown rendered manca completamente della sezione `## Trust anchor`); 1/11 banale-pass è il test `absent` che passa per assenza. Post-fix: **11/11 PASSED** in 2.33s. Genuine RED→GREEN. |
+| caller_verification | claim_holds | 0.95 | `_render_trust_anchor` definito a `markdown_reporter.py:213`, chiamato unconditional a `markdown_reporter.py:351` dentro `render()`. `render` importato come `render_markdown` in `cli.py:42`, invocato a `cli.py:459` sul branch `fmt == "markdown"`. Reachable via `pqc-audit report -f markdown` e indirettamente via `-f pdf` (pdf_reporter wraps markdown). |
+| counterexample | claim_holds | 0.85 | 5 contratti verificati: section heading, 9-colonne congruenti header/row, 3 label IT pedigree, skip-graceful `if not leaves`, unresolved surfacing `non risolto`. Edge cases con fallback difensivi (metadata `or {}`, root_subject `or "—"`, pedigree `_PEDIGREE_IT_LABEL.get(k, k)`). Pedantic nit: `source=unknown` + `resolved=True` produce display incoerente "risolto/non risolto", non bug perché claim non contrattualizza coerenza source↔resolved. No counterexample concreto. |
+
+**Consensus: hold 3-0-0.**
+
+---
+
 ## [Unreleased] — Sprint 9d.3 (root trust-anchor resolution + CA pedigree)
 
 Sprint 9d.3 (2026-05-17) answers the question every Italian PA audit

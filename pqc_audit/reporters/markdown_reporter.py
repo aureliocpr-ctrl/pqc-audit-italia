@@ -183,6 +183,89 @@ def _render_compliance(report: AuditReport) -> str:
     return _section("Compliance") + body
 
 
+_PEDIGREE_IT_LABEL: dict[str, str] = {
+    "qualified_it_tsp": "AgID-accreditata (TSP qualificato italiano)",
+    "commercial_global": "CA commerciale globale",
+    "unknown": "Sconosciuta — richiede verifica manuale",
+}
+
+_SOURCE_IT_LABEL: dict[str, str] = {
+    "on_wire": "presente sulla wire (server-shipped root)",
+    "trust_store": "risolta dal trust store locale",
+    "unknown": "non risolto",
+}
+
+
+def _collect_leaves_with_trust_anchor(report: AuditReport) -> list[CryptoAsset]:
+    """Return all leaf-position assets that carry a ``trust_anchor`` key."""
+    out: list[CryptoAsset] = []
+    for sr in report.scan_results:
+        for a in sr.assets:
+            md = a.metadata or {}
+            if md.get("chain_position") != "leaf":
+                continue
+            if "trust_anchor" not in md:
+                continue
+            out.append(a)
+    return out
+
+
+def _render_trust_anchor(report: AuditReport) -> str:
+    """Render the "Trust anchor — CA radice" section.
+
+    The section answers the eIDAS-relevant question every Italian PA
+    audit needs: who is the trust anchor, and is it an AgID-accredited
+    qualified TSP? The pedigree label is Italian and audit-friendly.
+
+    Skipped entirely when no leaf asset carries the ``trust_anchor``
+    metadata. Unresolved anchors are surfaced with "non risolto"
+    instead of silently dropped — same anti-fuffa stance as the
+    NIS2 mapping in Sprint 9h-integration.
+    """
+    leaves = _collect_leaves_with_trust_anchor(report)
+    if not leaves:
+        return ""
+
+    lines: list[str] = [_section("Trust anchor — CA radice")]
+    lines.append(
+        "| Target | Stato | Fonte | Root subject | Pedigree | "
+        "Algoritmo | Key size | Hash | Trust store source |\n"
+    )
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
+
+    for asset in leaves:
+        md = asset.metadata or {}
+        ta: dict = md.get("trust_anchor") or {}
+        resolved = bool(ta.get("resolved"))
+        source_key = str(ta.get("source") or "unknown")
+        source_label = _SOURCE_IT_LABEL.get(source_key, source_key)
+        root_subj = ta.get("root_subject") or "—"
+        pedigree_key = str(ta.get("pedigree") or "unknown")
+        pedigree_label = _PEDIGREE_IT_LABEL.get(pedigree_key, pedigree_key)
+        algo = ta.get("root_algorithm") or "—"
+        ksize = ta.get("root_key_size")
+        ksize_text = str(ksize) if ksize else "—"
+        sig_hash = ta.get("root_signature_hash") or "—"
+        ts_source = md.get("trust_store_source") or "—"
+        status = "risolto" if resolved else "non risolto"
+        lines.append(
+            f"| `{asset.asset_id}` | {status} | {source_label} | "
+            f"`{root_subj}` | {pedigree_label} | {algo} | {ksize_text} | "
+            f"{sig_hash} | `{ts_source}` |\n"
+        )
+
+    lines.append(
+        "\n_La pedigree `AgID-accreditata` indica che la CA radice "
+        "appartiene a un TSP qualificato italiano nel TSL pubblicato "
+        "da AgID (eIDAS art. 25). `CA commerciale globale` indica una "
+        "CA non italiana ma riconosciuta internazionalmente. "
+        "`Sconosciuta` richiede verifica manuale: la pedigree list "
+        "implementata è un sottoinsieme hand-curated, non un "
+        "catalogo completo._\n"
+    )
+    return "".join(lines)
+
+
 def _render_nis2_compliance(report: AuditReport) -> str:
     """Render NIS2 / D.Lgs. 138/2024 art. 24 mapping inline in the report.
 
@@ -265,6 +348,7 @@ def render(report: AuditReport) -> str:
         _render_header(report),
         _render_summary(report),
         _render_assets(report),
+        _render_trust_anchor(report),
         _render_vulnerabilities(report),
         _render_recommendations(report),
         _render_compliance(report),
