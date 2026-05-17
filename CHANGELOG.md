@@ -69,6 +69,47 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   the CI gate `ruff format --check .`. No logic changes — purely
   whitespace / quote-style / line-break normalization.
 
+### Added — JWKS endpoint live fetch scanner (Sprint 5 #2)
+
+- `pqc_audit.scanners.jwks_scanner` — new scanner that fetches an
+  RFC 7517 JWKS document (typical path
+  `/.well-known/jwks.json`) and classifies every key by algorithm
+  + size. Complementary to the existing `jwt_scanner`: that one
+  inspects tokens at rest, this one inspects the *signing material*
+  exposed by the authority. Findings:
+    * `kty=RSA, n < 2048 bits` → CRITICAL (sub-FIPS minimum,
+      SP 800-131A Rev. 2).
+    * `kty=RSA, n in {2048, 3072}` → HIGH (NIST IR 8547
+      deprecate-after-2030).
+    * `kty=EC, crv in {P-256, P-384}` → HIGH (same IR 8547
+      deprecation).
+    * `kty=EC, crv=secp256k1` → MEDIUM (non-FIPS curve).
+    * `kty=oct` → MEDIUM (symmetric distribution discouraged by
+      RFC 8725 §3.5).
+    * `alg=RS1 / HS1 / ES1` → HIGH (SHA-1 was withdrawn from FIPS
+      approval in 2024).
+- Security architecture (matches the security argument in
+  SECURITY.md): HTTPS-only (no http://, no file://); SSRF guard
+  refuses any hostname resolving to loopback / private / link-local /
+  multicast / reserved / unspecified (incl. AWS metadata
+  169.254.169.254); response cap 1 MiB; redirects refused (no 302
+  to an internal endpoint that would bypass the SSRF guard);
+  cert+hostname verification via the default SSL context.
+- Offline mode: `--path local.json` for airgapped audits and
+  reproducible fixtures.
+- Stdlib-only: uses `urllib.request` + `ssl` — no new third-party
+  dependency added.
+- New `ScanTarget` literal `jwks` mapped to
+  `ScanCategory.NETWORK`.
+- New CLI subcommand
+  `pqc-audit scan jwks --url https://.../jwks.json` or
+  `--path local.json` (mutually exclusive).
+- 24 unit tests in `tests/unit/test_jwks_scanner.py` cover each
+  finding type, the SSRF guard (8 hostnames including
+  169.254.169.254), the scheme guard, the both-host-and-path
+  guard, the malformed JSON path, and the live fetch via
+  monkeypatch. 2 CLI tests for the subcommand wiring.
+
 ### Fixed — CI test suite green on ubuntu/macOS (Sprint 5 #1)
 
 - 8 pytest cases were failing on the Linux/macOS CI runners while

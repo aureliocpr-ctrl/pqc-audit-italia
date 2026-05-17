@@ -37,6 +37,7 @@ from pqc_audit.reporters.sarif_reporter import render as render_sarif
 from pqc_audit.scanners.cert_scanner import CertificateScanner
 from pqc_audit.scanners.dnssec_scanner import DNSSECScanner
 from pqc_audit.scanners.iac_scanner import IaCScanner
+from pqc_audit.scanners.jwks_scanner import JWKSScanner
 from pqc_audit.scanners.jwt_scanner import JWTScanner
 from pqc_audit.scanners.mtls_scanner import MTLSScanner
 from pqc_audit.scanners.saml_scanner import SAMLScanner
@@ -314,6 +315,49 @@ def scan_iac_cmd(
         scanners=[IaCScanner()],
     )
     target = ScanTarget(type="iac", path=path)
+    report = asyncio.run(auditor.scan([target]))
+    typer.echo(render_json(report, pretty=pretty))
+
+
+@scan_app.command("jwks")
+def scan_jwks_cmd(
+    url: str = typer.Option(
+        None,
+        "--url",
+        help="HTTPS URL of a JWKS endpoint (e.g. https://example.com/.well-known/jwks.json).",
+    ),
+    path: str = typer.Option(
+        None,
+        "--path",
+        help="Local JWKS JSON file (alternative to --url for airgapped audits).",
+    ),
+    policy: str = typer.Option("default", "--policy", help="Audit policy name."),
+    data_sensitivity_years: int = typer.Option(
+        10,
+        "--data-sensitivity-years",
+        help="Assumed lifetime of confidential data, drives HNDL scoring (default: 10).",
+    ),
+    pretty: bool = typer.Option(True, "--pretty/--compact", help="Pretty-print JSON output."),
+) -> None:
+    """Scan a JSON Web Key Set (RFC 7517) and classify every key.
+
+    Live fetches an HTTPS JWKS endpoint OR reads a local JSON file
+    (one or the other, not both). HTTPS only; SSRF guard refuses any
+    host that resolves to a private / loopback / link-local address;
+    response is capped at 1 MiB. Each key's algorithm is classified
+    and quantum-vulnerable primitives (RSA-2048/3072, ECDSA-P256/P384)
+    are surfaced as HIGH findings per NIST IR 8547.
+    """
+    if not url and not path:
+        raise typer.BadParameter("provide --url or --path")
+    if url and path:
+        raise typer.BadParameter("provide either --url or --path, not both")
+    auditor = Auditor(
+        policy=policy,
+        data_sensitivity_years=data_sensitivity_years,
+        scanners=[JWKSScanner()],
+    )
+    target = ScanTarget(type="jwks", host=url or None, path=path or None)
     report = asyncio.run(auditor.scan([target]))
     typer.echo(render_json(report, pretty=pretty))
 

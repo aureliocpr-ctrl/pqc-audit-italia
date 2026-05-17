@@ -249,3 +249,45 @@ def test_scan_iac_missing_path_records_error(tmp_path: Path) -> None:
     sr = parsed["scan_results"][0]
     assert sr["assets"] == []
     assert sr["errors"]
+
+
+# ---------------------------------------------------------------------------
+# JWKS (Sprint 5 #2)
+# ---------------------------------------------------------------------------
+
+
+def _jwks_b64url(data: bytes) -> str:
+    import base64
+
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def test_scan_jwks_offline_path_flags_rsa_2048_as_high(tmp_path: Path) -> None:
+    jwks = {
+        "keys": [
+            {
+                "kty": "RSA",
+                "kid": "test-key",
+                "n": _jwks_b64url(b"\x00" * 256),  # 256 bytes * 8 = 2048 bits
+                "e": "AQAB",
+            }
+        ]
+    }
+    f = tmp_path / "jwks.json"
+    f.write_text(json.dumps(jwks), encoding="utf-8")
+    result = runner.invoke(app, ["scan", "jwks", "--path", str(f), "--compact"])
+    assert result.exit_code == 0, result.stdout
+    parsed = json.loads(result.stdout)
+    sr = parsed["scan_results"][0]
+    assert sr["scanner_name"] == "jwks"
+    assert len(sr["assets"]) == 1
+    severities = {v["severity"] for v in sr["vulnerabilities"]}
+    assert "HIGH" in severities
+
+
+def test_scan_jwks_rejects_when_neither_url_nor_path() -> None:
+    result = runner.invoke(app, ["scan", "jwks", "--compact"])
+    # typer.BadParameter → non-zero exit
+    assert result.exit_code != 0
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "--url" in combined or "--path" in combined
