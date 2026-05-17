@@ -133,6 +133,75 @@ baseline, and bumps `cryptography` to the patched 46.0.x series.
   guard, the malformed JSON path, and the live fetch via
   monkeypatch. 2 CLI tests for the subcommand wiring.
 
+### Changed — version bump 0.2.1 → 0.3.0-beta1 (Sprint 9 step C)
+
+`__version__` in `pqc_audit/__init__.py` and `version` in
+`pyproject.toml` had drifted: the tag `v0.3.0-beta1` was already
+published on `main` but the running binary still self-identified
+as `0.2.1`. Caught while dissecting a real `scan tls` output —
+`tool_version: 0.2.1` appeared in every JSON / CBOM / SARIF
+report.
+
+Now coherent: `python -m pqc_audit version` → `0.3.0-beta1`,
+JSON / CBOM (`metadata.tools[0].version`) / SARIF
+(`runs[0].tool.driver.version`) all stamp the bumped value.
+
+### End-to-end smoke against a real public endpoint (Sprint 9 step C)
+
+Verified manually (not in the unit suite — network-bound) against
+`https://www.agid.gov.it:443`, a public IT-government endpoint that
+constitutes legitimate consumer-side scanning:
+
+```
+$ pqc-audit scan tls --host www.agid.gov.it --port 443 --compact > r.json
+$ pqc-audit report --input r.json --format cbom  --output r.cbom.json
+$ pqc-audit report --input r.json --format sarif --output r.sarif.json
+```
+
+Empirical results:
+
+  * `scan tls` exit 0, 1.3 s, 2.2 kB JSON.
+  * Discovered asset: `ECDSA-256 secp256r1`, cipher
+    `TLS_AES_256_GCM_SHA384`, signature SHA-384, validity
+    2026-04-01 → 2026-06-30 (Let's Encrypt 90 d), public-key
+    SHA-256 fingerprint `261c3879...`.
+  * Finding: 1 × `HIGH / CWE-327` "Quantum-vulnerable algorithm
+    in use (ECDSA-256)".
+  * CBOM output (2.6 kB) validates **0 errors** against the
+    vendored CycloneDX 1.6 schema → Dependency-Track / Anchore /
+    Microsoft SBOM Tool would ingest it.
+  * SARIF output (2.4 kB) validates **0 errors** against the
+    vendored OASIS SARIF 2.1.0 schema → GitHub Code Scanning /
+    GitLab SAST / Azure DevOps would ingest it.
+  * CBOM crypto-asset:
+    ```
+    bom-ref: crypto:tls://www.agid.gov.it:443
+    primitive: signature
+    parameterSetIdentifier: ECDSA-256
+    classicalSecurityLevel: 256
+    nistQuantumSecurityLevel: 0
+    executionEnvironment: unknown
+    ```
+  * SARIF result:
+    ```
+    level: error
+    ruleId: PQC.QUANTUM_VULNERABLE.ECDSA-256
+    ```
+
+Honest gap list (the smoke confirmed these are missing, not
+present-but-broken):
+  * Only the negotiated cipher is reported, not the full server
+    cipher-suite enumeration.
+  * The TLS chain validation stops at the leaf certificate — the
+    intermediate and root are not introspected.
+  * No OCSP / CRL revocation check.
+  * No HSTS / cookie-flag / cert-pinning detection (these are
+    HTTP-layer, not TLS).
+  * No JA3 / JA4 fingerprint.
+  * No PQC hybrid handshake detection (X25519+ML-KEM-768 etc.) —
+    the algorithm map does not yet include the in-flight TLS
+    draft codepoints.
+
 ### Fixed — rule-pack SHA-256 was NOT cross-OS stable (Sprint 9 step B)
 
 `critic-orchestrator` adversarial review (job `a0302e7b67e46711`,

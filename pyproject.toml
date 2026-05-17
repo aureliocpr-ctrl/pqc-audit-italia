@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pqc-audit-italia"
-version = "0.2.1"
+version = "0.3.0-beta1"
 description = "Crypto-discovery and crypto-agility audit toolkit for the Italian market (PA, SMB, financial sector). NIS2/DORA/AgID-aware."
 readme = "README.md"
 requires-python = ">=3.11"
