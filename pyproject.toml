@@ -64,7 +64,7 @@ dependencies = [
     # to the patched release; upper bound widened to <47 since the
     # 45→46 series only changed the OpenSSL bundling, not the public
     # Python API we use (X509, EC, RSA, hazmat primitives).
-    "cryptography>=46.0.7,<47.0",
+    "cryptography>=46.0.7,<50.0",
     "typer>=0.12,<1.0",
     "pyyaml>=6.0,<7.0",
     # defusedxml is required by the SAML scanner to block XXE / billion
